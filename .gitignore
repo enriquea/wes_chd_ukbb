@@ -198,3 +198,4 @@ fabric.properties
 
 # dir - don't share
 /data
+/.idea
