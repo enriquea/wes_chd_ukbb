@@ -16,35 +16,35 @@ nohup python variant_qc.py \
              > nohup.log 2>&1 &
 """
 
-def main(args):
 
+def main(args):
     # Start Hail
     hl.init(default_reference=args.default_ref_genome)
 
     # Read Hail MatrixTable
     mt = hl.read_matrix_table(args.mt_input_path)
-    
+
     # compute sample and variant qc
     mt = hl.variant_qc(mt)
-    
-    ## write variant qc hailtable
+
+    # write variant qc hailtable
     tb_variant_qc = (mt
                      .select_rows('variant_qc')
                      .rows()
                      .flatten()
                      .key_by('locus', 'alleles')
-                    )
+                     )
     output_path_ht = f'{args.ht_output_path}_variant_qc.ht'
     tb_variant_qc.write(output=output_path_ht)
-    
+
     if args.write_to_file:
         (hl.read_table(output_path_ht)
-        .export(f'{output_path_ht}_variant_qc.tsv.bgz')
-        )
-        
+         .export(f'{output_path_ht}_variant_qc.tsv.bgz')
+         )
+
     # Stop Hail
     hl.stop()
-    
+
     print("Finished!")
 
 

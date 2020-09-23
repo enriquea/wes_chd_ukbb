@@ -16,39 +16,38 @@ nohup python sample_qc.py \
              > nohup.log 2>&1 &
 """
 
-def main(args):
 
+def main(args):
     # Start Hail
     hl.init(default_reference=args.default_ref_genome)
 
     # Read Hail MatrixTable
     mt = hl.read_matrix_table(args.mt_input_path)
-    
+
     # compute sample qc (on autosomes)
     mt = hl.sample_qc(mt
-                     .filter_rows(mt.locus.in_autosome(), keep=True)
-                     )
-    
-    ## write sample qc hailtable
+                      .filter_rows(mt.locus.in_autosome(), keep=True)
+                      )
+
+    # write sample qc hailtable
     tb_sample_qc = (mt
-                     .select_cols('sample_qc')
-                     .cols()
-                     .flatten()
-                     .key_by('s')
+                    .select_cols('sample_qc')
+                    .cols()
+                    .flatten()
+                    .key_by('s')
                     )
-    
+
     output_ht_path = f'{args.ht_output_path}_sample_qc_autosomes.ht'
     tb_sample_qc.write(output=output_ht_path)
-    
+
     if args.write_to_file:
         (hl.read_table(output_ht_path)
-        .export(f'{output_ht_path}.tsv.bgz')
-        )
-               
+         .export(f'{output_ht_path}.tsv.bgz')
+         )
 
     # Stop Hail
     hl.stop()
-    
+
     print("Finished!")
 
 
