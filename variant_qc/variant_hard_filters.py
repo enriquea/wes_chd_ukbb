@@ -1,7 +1,7 @@
 '''
 
 Annotate different filter flags (e.g. hard filters) useful for
-downstream anlysis.
+downstream analysis.
 
 Expected a biallelic variant Hail Table (keyed) by <locus, alleles>,
 annotated with VEP and QCed by 'variant_qc'.
