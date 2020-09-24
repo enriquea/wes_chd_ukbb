@@ -1,22 +1,14 @@
 """
 
-Infer chromosomal sex from inbreeding coefficient (F)
+Annotate chromosomal sex from inbreeding coefficient (F)
 
 """
 
 import hail as hl
 import argparse
 
+from utils.generic import unphase_mt
 
-def unphase_mt(mt: hl.MatrixTable) -> hl.MatrixTable:
-    """
-    Generate unphased version of MatrixTable (assumes call is in mt.GT and is diploid or haploid only)
-    """
-    return mt.annotate_entries(GT=hl.case()
-                               .when(mt.GT.is_diploid(), hl.call(mt.GT[0], mt.GT[1], phased=False))
-                               .when(mt.GT.is_haploid(), hl.call(mt.GT[0], phased=False))
-                               .default(hl.null(hl.tcall))
-                               )
 
 def annotate_sex(mt: hl.MatrixTable,
                  male_threshold: float = 0.6,
