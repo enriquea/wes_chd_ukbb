@@ -8,6 +8,16 @@ import hail as hl
 import argparse
 
 
+def unphase_mt(mt: hl.MatrixTable) -> hl.MatrixTable:
+    """
+    Generate unphased version of MatrixTable (assumes call is in mt.GT and is diploid or haploid only)
+    """
+    return mt.annotate_entries(GT=hl.case()
+                               .when(mt.GT.is_diploid(), hl.call(mt.GT[0], mt.GT[1], phased=False))
+                               .when(mt.GT.is_haploid(), hl.call(mt.GT[0], phased=False))
+                               .default(hl.null(hl.tcall))
+                               )
+
 def annotate_sex(mt: hl.MatrixTable,
                  male_threshold: float = 0.6,
                  female_threshold: float = 0.4) -> hl.MatrixTable:
@@ -21,6 +31,7 @@ able
     """
     mt = mt.filter_rows(mt.locus.contig == 'chrX',
                         keep=True)
+    mt = unphase_mt(mt)
 
     sex_ht = hl.impute_sex(mt.GT,
                            aaf_threshold=0.05,
