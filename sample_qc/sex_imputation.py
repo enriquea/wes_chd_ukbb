@@ -56,6 +56,8 @@ def main(args):
          .export(f'{output_ht_path}.tsv.bgz')
          )
 
+    hl.stop()
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
