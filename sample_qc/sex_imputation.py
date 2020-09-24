@@ -19,13 +19,14 @@ def annotate_sex(mt: hl.MatrixTable,
     :param MatrixTable mt: MT containing samples to be ascertained for sex
 able
     """
-    mt = mt.filter_rows(mt.locus.is_x_nonpar(),
+    mt = mt.filter_rows(mt.locus.contig == 'chrX',
                         keep=True)
 
     sex_ht = hl.impute_sex(mt.GT,
                            aaf_threshold=0.05,
                            female_threshold=female_threshold,
-                           male_threshold=male_threshold)
+                           male_threshold=male_threshold,
+                           include_par=False)
 
     sex_colnames = ['f_stat', 'is_female']
     sex_ht = sex_ht.select(*sex_colnames)
