@@ -21,7 +21,6 @@ logger.setLevel(logging.INFO)
 
 
 def main(args):
-
     # Initializing Hail on cluster mode
     hl.init()
 
@@ -29,12 +28,15 @@ def main(args):
     mt = hl.read_matrix_table(args.mt_input_path)
 
     # filter variants (bi-allelic, high-callrate, common SNPs)
-    logger.info("Filtering to bi-allelic, high-callrate, common SNPs for pc_relate...")
+    logger.info(f"Filtering to bi-allelic, high-callrate, common SNPs ({args.maf_threshold}) for pc_relate...")
 
-    mt = mt.filter_rows((hl.len(mt.alleles) == 2) & hl.is_snp(mt.alleles[0], mt.alleles[1]) &
-                        (hl.agg.mean(mt.GT.n_alt_alleles()) / 2 > 0.001) &
-                        (hl.agg.fraction(hl.is_defined(mt.GT)) > 0.99) &
-                        ~mt.was_split)
+    mt = (mt
+          .filter_rows((hl.len(mt.alleles) == 2) & hl.is_snp(mt.alleles[0], mt.alleles[1]) &
+                       (hl.agg.mean(mt.GT.n_alt_alleles()) / 2 > args.maf_threshold) &
+                       (hl.agg.fraction(hl.is_defined(mt.GT)) > 0.99) &
+                       ~mt.was_split)
+          .repartition(500, shuffle=False)
+          )
 
     if args.sample_to_keep is not None:
         sample_table = hl.import_table(paths=args.sample_to_keep,
@@ -46,31 +48,32 @@ def main(args):
         # LD pruning
         # Avoid filtering / missingness entries (genotypes) before run LP pruning
         # Zulip Hail support issue -> "BlockMatrix trouble when running pc_relate"
-        mt = mt.unfilter_entries()
+        # mt = mt.unfilter_entries()
 
         # Prune variants in linkage disequilibrium.
         # Return a table with nearly uncorrelated variants
 
-        logger.info(f'Pruning variants in LD...')
+        logger.info(f'Pruning variants in LD from MT with {mt.count_rows()} variants...')
 
         pruned_variant_table = hl.ld_prune(mt.GT,
                                            r2=args.r2,
                                            bp_window_size=args.bp_window_size,
-                                           memory_per_core=512)
+                                           memory_per_core=1024)
 
         # Keep LD-pruned variants
         mt = (mt
               .filter_rows(hl.is_defined(pruned_variant_table[mt.locus, mt.alleles]), keep=True)
-              .persist()
               )
 
     # run pc_relate method...compute all stats
     logger.info(f'Running pc_relate method with {args.n_pcs} PCs and {mt.count_rows()} variants...')
 
-    relatedness = hl.pc_relate(mt.GT,
-                               args.individual_specific_maf,
+    relatedness = hl.pc_relate(call_expr=mt.GT,
+                               min_individual_maf=args.min_individual_maf,
                                k=args.n_pcs,
-                               statistics='all')
+                               min_kinship=args.min_kinship,
+                               statistics='kin',
+                               block_size=1024)
 
     # TODO: retrieve maximal independent sample set
 
@@ -98,11 +101,15 @@ if __name__ == '__main__':
     parser.add_argument('--sample_to_keep', help='Text file (one-column, no header) listing the samples to keep',
                         type=str, default=None)
     parser.add_argument('--n_pcs', help='Number of PCs to be computed', type=int, default=10)
-    parser.add_argument('--individual_specific_maf', help='Individual specif MAF cutoff used to run pc_relate method',
+    parser.add_argument('--min_individual_maf', help='Individual specif MAF cutoff used to run pc_relate method',
                         type=float, default=0.01)
+    parser.add_argument('--min_kinship', help='Exclude pairs of samples with kinship lower than min_kinship',
+                        type=float, default=0.05)
+    parser.add_argument('--maf_threshold', help='Exclude variants with maf lower than maf_threshold',
+                        type=float, default=0.05)
     parser.add_argument('--ld_pruning', help='Perform LD pruning before PCA (recommended)', action='store_true')
     parser.add_argument('--r2', help='Squared correlation threshold for LD pruning', type=float, default=0.2)
-    parser.add_argument('--bp_window_size', help='Window size in bps', type=int, default=500000)
+    parser.add_argument('--bp_window_size', help='Window size in bps for ld_prune', type=int, default=500000)
     parser.add_argument('--write_to_file', help='Write results to TSV file', action='store_true')
 
     args = parser.parse_args()
