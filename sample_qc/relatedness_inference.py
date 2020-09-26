@@ -37,12 +37,14 @@ def main(args):
                        (hl.agg.mean(mt.GT.n_alt_alleles()) / 2 > args.maf_threshold) &
                        (hl.agg.fraction(hl.is_defined(mt.GT)) > 0.99) &
                        ~mt.was_split)
-          .select_entries(mt.GT)
           .repartition(500, shuffle=False)
           )
 
-    # force to evaluate expression
-    mt = mt.checkpoint(f'{hdfs_dir}/tmp/mt_filtered_to_pc_relate_24092020.mt')
+    # keep only GT entry field and force to evaluate expression
+    mt = (mt
+          .select_entries(mt.GT)
+          .checkpoint(f'{hdfs_dir}/tmp/mt_filtered_to_pc_relate_24092020.mt')
+          )
 
     if args.sample_to_keep is not None:
         sample_table = hl.import_table(paths=args.sample_to_keep,
