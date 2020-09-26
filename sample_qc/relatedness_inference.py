@@ -19,6 +19,8 @@ logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger("relatedness_inference")
 logger.setLevel(logging.INFO)
 
+hdfs_dir = 'hdfs://spark-master:9820'
+
 
 def main(args):
     # Initializing Hail on cluster mode
@@ -37,6 +39,9 @@ def main(args):
                        ~mt.was_split)
           .repartition(500, shuffle=False)
           )
+
+    # force to evaluate expression
+    mt = mt.checkpoint(f'{hdfs_dir}/tmp/mt_filtered_to_pc_relate_24092020.mt')
 
     if args.sample_to_keep is not None:
         sample_table = hl.import_table(paths=args.sample_to_keep,
