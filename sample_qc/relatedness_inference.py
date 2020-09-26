@@ -37,6 +37,7 @@ def main(args):
                        (hl.agg.mean(mt.GT.n_alt_alleles()) / 2 > args.maf_threshold) &
                        (hl.agg.fraction(hl.is_defined(mt.GT)) > 0.99) &
                        ~mt.was_split)
+          .select_entries(mt.GT)
           .repartition(500, shuffle=False)
           )
 
