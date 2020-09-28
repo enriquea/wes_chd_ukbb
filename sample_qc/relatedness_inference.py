@@ -43,7 +43,7 @@ def main(args):
     # keep only GT entry field and force to evaluate expression
     mt = (mt
           .select_entries(mt.GT)
-          .checkpoint(f'{hdfs_dir}/tmp/mt_filtered_to_pc_relate_24092020.mt')
+          .checkpoint(f'{hdfs_dir}/tmp/mt_filtered_for_pc_relate_28092020.mt')
           )
 
     if args.sample_to_keep is not None:
@@ -80,7 +80,7 @@ def main(args):
                                min_individual_maf=args.min_individual_maf,
                                k=args.n_pcs,
                                min_kinship=args.min_kinship,
-                               statistics='kin',
+                               statistics='all',
                                block_size=1024)
 
     # TODO: retrieve maximal independent sample set
@@ -114,7 +114,7 @@ if __name__ == '__main__':
     parser.add_argument('--min_kinship', help='Exclude pairs of samples with kinship lower than min_kinship',
                         type=float, default=0.05)
     parser.add_argument('--maf_threshold', help='Exclude variants with maf lower than maf_threshold',
-                        type=float, default=0.05)
+                        type=float, default=0.01)
     parser.add_argument('--ld_pruning', help='Perform LD pruning before PCA (recommended)', action='store_true')
     parser.add_argument('--r2', help='Squared correlation threshold for LD pruning', type=float, default=0.2)
     parser.add_argument('--bp_window_size', help='Window size in bps for ld_prune', type=int, default=500000)
