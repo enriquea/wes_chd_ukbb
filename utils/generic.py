@@ -8,6 +8,7 @@ Useful generic functions taken/adapted from:
 import hail as hl
 
 
+# unphase MatrixTable
 def unphase_mt(mt: hl.MatrixTable) -> hl.MatrixTable:
     """
     Generate unphased version of MatrixTable (assumes call is in mt.GT and is diploid or haploid only)
@@ -17,4 +18,7 @@ def unphase_mt(mt: hl.MatrixTable) -> hl.MatrixTable:
                                .when(mt.GT.is_haploid(), hl.call(mt.GT[0], phased=False))
                                .default(hl.null(hl.tcall))
                                )
+
+
+
 
