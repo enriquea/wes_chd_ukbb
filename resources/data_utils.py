@@ -21,6 +21,7 @@ def get_mt_data(dataset: str = 'chd_ukbb', part: str = None) -> hl.MatrixTable:
     :return MT path
 
     """
+    # TODO: add different MT versions here...
     if part == 'unfiltered':
         return hl.read_matrix_table(f'{nfs_dir}/hail_data/mts/{dataset}_split_v2_09092020.mt')
     elif part == 'filtered_high_callrate':
@@ -31,7 +32,7 @@ def get_mt_data(dataset: str = 'chd_ukbb', part: str = None) -> hl.MatrixTable:
 
 def get_qc_mt_path(dataset: str = 'chd_ukbb', part: str = None, split=False) -> str:
     split = '.split' if split else ''
-    return f'{nfs_dir}/hail_data/mts/{dataset}.qc.{part}{split}.mt'
+    return f'{nfs_dir}/hail_data/mt_qc/{dataset}.qc.{part}{split}.mt'
 
 
 def get_sample_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None) -> str:
