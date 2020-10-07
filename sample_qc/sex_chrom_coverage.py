@@ -74,11 +74,11 @@ def compute_mean_coverage(
         # filtering if exclude/include intervals are defined
         if included_calling_intervals is not None:
             chr_mt = chr_mt.filter_rows(
-                hl.is_defined(included_calling_intervals[chr_mt.key])
+                hl.is_defined(included_calling_intervals[chr_mt.row_key])
             )
         if excluded_calling_intervals is not None:
             chr_mt = chr_mt.filter_rows(
-                hl.is_missing(excluded_calling_intervals[chr_mt.key])
+                hl.is_missing(excluded_calling_intervals[chr_mt.row_key])
             )
 
         # exclude sex chromosome pseudo-autosomal-region (PAR) from the computation
