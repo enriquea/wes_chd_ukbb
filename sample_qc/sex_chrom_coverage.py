@@ -129,7 +129,8 @@ def main(args):
 
     # read intervals for filtering variants (used mainly for exomes)
     def _get_interval_table(interval: str) -> Union[None, hl.Table]:
-        return get_interval_ht(interval, args.default_reference) if interval is not None else interval
+        return get_interval_ht(name=interval,
+                               reference=args.default_reference) if interval is not None else interval
 
     ht = compute_mean_coverage(mt=mt,
                                normalization_contig=args.normalization_contig,

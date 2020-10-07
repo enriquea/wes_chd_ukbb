@@ -38,9 +38,9 @@ def get_sample_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None) -> str:
     return f'{nfs_dir}/hail_data/sample_qc/{dataset}.sample_qc.{part}.ht'
 
 
-def get_interval_ht(name: str = None, reference: str = None) -> hl.Table:
+def get_interval_ht(name: str, reference: str) -> hl.Table:
     """
-    Return interval HT. Used mostly for filtering...
+    Return interval HT used during the filtering process
 
     :param name: name/description of the interval to be returned.
                  - ssv5: Agilent SureSelect V5
@@ -49,8 +49,10 @@ def get_interval_ht(name: str = None, reference: str = None) -> hl.Table:
     :param reference: genome reference. One the One of GRCh37 and GRCh38.
     :return: Interval HT
     """
-    if name or reference is None:
-        raise DataException('Both name and reference must be specified...')
+    if name not in ('ssv5', 'idt_xgen', 'ssv5_idt_intersect'):
+        raise DataException('Invalid interval name...')
+    if reference not in ('GRCh37', 'GRCh38'):
+        raise DataException('Invalid genome reference...must be one of GRCh37 and GRCh38')
 
     return hl.read_table(f'{nfs_dir}/resources/intervals/{name}.intervals.{reference}.ht')
 
