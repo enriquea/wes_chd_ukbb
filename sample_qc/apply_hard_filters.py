@@ -61,7 +61,7 @@ def make_hard_filters_expr(ht: hl.Table) -> hl.expr.SetExpression:
 
 def main(args):
 
-    hl.init(args.default_reference)
+    hl.init(default_reference=args.default_reference)
 
     logger.info("Importing data...")
 
