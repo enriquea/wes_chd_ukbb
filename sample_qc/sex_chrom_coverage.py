@@ -69,17 +69,28 @@ def compute_mean_coverage(
 
     def get_chr_coverage_ann(chrom: str) -> hl.Table:
 
+        logger.info(f"Working on {chrom}...")
+
         chr_mt = hl.filter_intervals(mt, [hl.parse_locus_interval(chrom)])
 
         # filtering if exclude/include intervals are defined
         if included_calling_intervals is not None:
+            logger.info(f"Filtering variants defined in calling interval {args.interval_to_include}...")
+            total_variants = chr_mt.count_rows()
             chr_mt = chr_mt.filter_rows(
                 hl.is_defined(included_calling_intervals[chr_mt.locus])
             )
+            variant_in_interval = chr_mt.count_rows()
+            logger.info(f"Including {variant_in_interval} out of {total_variants} defined in intervals...")
+
         if excluded_calling_intervals is not None:
+            logger.info(f"Excluding variants defined in interval {args.interval_to_exclude}...")
+            total_variants = chr_mt.count_rows()
             chr_mt = chr_mt.filter_rows(
                 hl.is_missing(excluded_calling_intervals[chr_mt.locus])
             )
+            excluded_variants = total_variants - chr_mt.count_rows()
+            logger.info(f"Excluding {excluded_variants} out of {total_variants} defined in intervals...")
 
         # exclude sex chromosome pseudo-autosomal-region (PAR) from the computation
         if chrom in ref.x_contigs:
@@ -119,6 +130,8 @@ def main(args):
 
     hl.init(default_reference=args.default_reference)
 
+    logger.info("Importing data...")
+
     # import unfiltered MT
     mt = get_mt_data(dataset=args.exome_cohort, part='unfiltered')
 
@@ -138,6 +151,8 @@ def main(args):
                                excluded_calling_intervals=_get_interval_table(args.interval_to_exclude),
                                chr_x=args.chr_x,
                                chr_y=args.chr_y)
+
+    logger.info("Exporting data...")
 
     # write HT
     output_ht_path = get_sample_qc_ht_path(part='sex_chrom_coverage')
