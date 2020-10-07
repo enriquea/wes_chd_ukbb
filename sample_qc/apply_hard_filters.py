@@ -2,10 +2,7 @@ import argparse
 import logging
 
 import hail as hl
-from typing import Union
 
-# from resources.sample_qc import get_sample_metadata
-# from utils.expressions import bi_allelic_expr
 from resources.data_utils import get_mt_data, get_qc_mt_path, get_sample_qc_ht_path
 from utils.expressions import bi_allelic_expr
 from utils.generic import unphase_mt
@@ -13,9 +10,6 @@ from utils.generic import unphase_mt
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger("unified_sample_qc_a")
 logger.setLevel(logging.INFO)
-
-# dir to write temp files
-hdfs_tmp_dir = 'hdfs://spark-master:9820/tmp'
 
 
 def annotate_sex(mt: hl.MatrixTable,
@@ -50,7 +44,7 @@ def make_hard_filters_expr(ht: hl.Table) -> hl.expr.SetExpression:
         # 'contamination': ht.freemix > 0.05,
         # 'chimera': ht.pct_chimeras > 0.05,
         'callrate': ht.callrate < 0.85,
-        'coverage': ht.chr20_mean_dp == 0,
+        'coverage': ht.chr20_mean_coverage == 0,
         'ambiguous_sex': ht.ambiguous_sex,
         'sex_aneuploidy': ht.sex_aneuploidy,
     }
@@ -94,12 +88,10 @@ def main(args):
     # unphase MT. required to impute_sex...
     qc_mt = unphase_mt(qc_mt)
 
-    logger.info("Importing metadata...")
-    meta_ht = (hl.read_table(get_sample_qc_ht_path(part='sex_chromosome_coverage'))
+    logger.info("Importing sample metadata...")
+    meta_ht = (hl.read_table(get_sample_qc_ht_path(part='sex_chrom_coverage'))
                .key_by('s')
                )
-
-    meta_ht = meta_ht.annotate(normalized_y_coverage=meta_ht.chrY_ploidy)
 
     qc_mt = qc_mt.annotate_cols(**meta_ht[qc_mt.s])
 
@@ -109,14 +101,14 @@ def main(args):
                          male_threshold=0.6).cols()
 
     # Flag individuals with ambiguous sex and aneuploidies
-    qc_ht = qc_ht.annotate(ambiguous_sex=((qc_ht.f_stat >= 0.5) & (hl.is_defined(qc_ht.normalized_y_coverage) &
-                                          (qc_ht.normalized_y_coverage <= 0.1))) |
+    qc_ht = qc_ht.annotate(ambiguous_sex=((qc_ht.f_stat >= 0.5) & (hl.is_defined(qc_ht.chrY_normalized_coverage) &
+                                          (qc_ht.chrY_normalized_coverage <= 0.1))) |
                                          (hl.is_missing(qc_ht.f_stat)) |
                                          ((qc_ht.f_stat >= 0.4) & (qc_ht.f_stat <= 0.6) &
-                                          (hl.is_defined(qc_ht.normalized_y_coverage) & (
-                                                 qc_ht.normalized_y_coverage > 0.1))),
-                           sex_aneuploidy=(qc_ht.f_stat < 0.4) & hl.is_defined(qc_ht.normalized_y_coverage) & (
-                                   qc_ht.normalized_y_coverage > 0.1))
+                                          (hl.is_defined(qc_ht.chrY_normalized_coverage) & (
+                                                 qc_ht.chrY_normalized_coverage > 0.1))),
+                           sex_aneuploidy=(qc_ht.f_stat < 0.4) & hl.is_defined(qc_ht.chrY_normalized_coverage) & (
+                                   qc_ht.chrY_normalized_coverage > 0.1))
 
     logger.info("Annotating samples failing hard filters...")
 
