@@ -199,3 +199,4 @@ fabric.properties
 # dir - don't share
 /data
 /testscripts
+/testdata
