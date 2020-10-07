@@ -36,6 +36,10 @@ def get_qc_mt_path(dataset: str = 'chd_ukbb', part: str = None, split=False) -> 
 
 
 def get_sample_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None) -> str:
+
+    if part not in ('sex_chrom_coverage', 'hard_filters'):
+        raise DataException('Expected part one of: sex_chrom_coverage, hard_filters')
+
     return f'{nfs_dir}/hail_data/sample_qc/{dataset}.sample_qc.{part}.ht'
 
 

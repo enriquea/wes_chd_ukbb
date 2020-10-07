@@ -85,11 +85,11 @@ def main(args):
 
         if not args.skip_write_qc_mt:
             (mt
-             .write(get_qc_mt_path(part='high_callrate.common_snp.biallelic', split=True),
+             .write(get_qc_mt_path(part='high_callrate_common_snp_biallelic', split=True),
                     overwrite=args.overwrite)
              )
 
-    qc_mt = hl.read_matrix_table(get_qc_mt_path(part='high_callrate.common_snp.biallelic', split=True))
+    qc_mt = hl.read_matrix_table(get_qc_mt_path(part='high_callrate_common_snp_biallelic', split=True))
 
     # unphase MT. required to impute_sex...
     qc_mt = unphase_mt(qc_mt)
