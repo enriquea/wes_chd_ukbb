@@ -54,11 +54,9 @@ def make_hard_filters_expr(ht: hl.Table) -> hl.expr.SetExpression:
 
 
 def main(args):
-
     hl.init(default_reference=args.default_reference)
 
     logger.info("Importing data...")
-
     # read MT
     if not args.skip_filter_step:
 
@@ -72,20 +70,17 @@ def main(args):
                             (hl.agg.mean(mt.GT.n_alt_alleles()) / 2 > 0.001) &
                             (hl.agg.fraction(hl.is_defined(mt.GT)) > 0.99))
 
-        mt = (mt
-              .annotate_cols(callrate=hl.agg.fraction(hl.is_defined(mt.GT)))
-              .naive_coalesce(1000)
-              )
-
-        if not args.skip_write_qc_mt:
-            (mt
-             .write(get_qc_mt_path(part='high_callrate_common_snp_biallelic', split=True),
-                    overwrite=args.overwrite)
-             )
+        logger.info(f"Writing filtered MT with {mt.count_rows} variants...")
+        (mt
+         .annotate_cols(callrate=hl.agg.fraction(hl.is_defined(mt.GT)))
+         .naive_coalesce(1000)
+         .write(get_qc_mt_path(part='high_callrate_common_snp_biallelic', split=True),
+                overwrite=args.overwrite)
+         )
 
     qc_mt = hl.read_matrix_table(get_qc_mt_path(part='high_callrate_common_snp_biallelic', split=True))
 
-    # unphase MT. required to impute_sex...
+    # unphase MT. required for imputing sex...
     qc_mt = unphase_mt(qc_mt)
 
     logger.info("Importing sample metadata...")
@@ -102,11 +97,11 @@ def main(args):
 
     # Flag individuals with ambiguous sex and aneuploidies
     qc_ht = qc_ht.annotate(ambiguous_sex=((qc_ht.f_stat >= 0.5) & (hl.is_defined(qc_ht.chrY_normalized_coverage) &
-                                          (qc_ht.chrY_normalized_coverage <= 0.1))) |
+                                                                   (qc_ht.chrY_normalized_coverage <= 0.1))) |
                                          (hl.is_missing(qc_ht.f_stat)) |
                                          ((qc_ht.f_stat >= 0.4) & (qc_ht.f_stat <= 0.6) &
                                           (hl.is_defined(qc_ht.chrY_normalized_coverage) & (
-                                                 qc_ht.chrY_normalized_coverage > 0.1))),
+                                                  qc_ht.chrY_normalized_coverage > 0.1))),
                            sex_aneuploidy=(qc_ht.f_stat < 0.4) & hl.is_defined(qc_ht.chrY_normalized_coverage) & (
                                    qc_ht.chrY_normalized_coverage > 0.1))
 
@@ -149,9 +144,6 @@ if __name__ == '__main__':
                         action='store_true')
     parser.add_argument('--overwrite', help='Overwrite pre-existing data', action='store_true')
     parser.add_argument('--default_reference', help='One of GRCh37 and GRCh38', type=str, default='GRCh38')
-    parser.add_argument('--skip_write_qc_mt',
-                        help='Skip writing pre-calculated MatrixTable containing high-quality variants',
-                        action='store_true')
     parser.add_argument('--write_to_file', help='Optionally, write output HT to TSV file.', action='store_true')
 
     args = parser.parse_args()
