@@ -70,7 +70,7 @@ def main(args):
                             (hl.agg.mean(mt.GT.n_alt_alleles()) / 2 > 0.001) &
                             (hl.agg.fraction(hl.is_defined(mt.GT)) > 0.99))
 
-        logger.info(f"Writing filtered MT with {mt.count_rows} variants...")
+        logger.info(f"Writing filtered MT with {mt.count_rows()} variants...")
         (mt
          .annotate_cols(callrate=hl.agg.fraction(hl.is_defined(mt.GT)))
          .naive_coalesce(1000)
