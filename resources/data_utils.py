@@ -31,11 +31,11 @@ def get_mt_data(dataset: str = 'chd_ukbb', part: str = None) -> hl.MatrixTable:
 
 def get_qc_mt_path(dataset: str = 'chd_ukbb', part: str = None, split=False) -> str:
     split = '.split' if split else ''
-    return f'{nfs_dir}/hail_data/mts/{dataset}_qc_{part}{split}.mt'
+    return f'{nfs_dir}/hail_data/mts/{dataset}.qc.{part}{split}.mt'
 
 
 def get_sample_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None) -> str:
-    return f'{nfs_dir}/hail_data/sample_qc/{dataset}_sample_qc_{part}.ht'
+    return f'{nfs_dir}/hail_data/sample_qc/{dataset}.sample_qc.{part}.ht'
 
 
 class DataException(Exception):
