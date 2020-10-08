@@ -5,6 +5,6 @@ nohup python -m sample_qc.ancestry_inference \
                  --n_pcs 20 \
                  --overwrite \
                  --write_to_file \
-                 --default_reference 'GRCh38'
+                 --default_reference 'GRCh38' \
                  > pca_ancestry_inference.log 2>&1 &
 
