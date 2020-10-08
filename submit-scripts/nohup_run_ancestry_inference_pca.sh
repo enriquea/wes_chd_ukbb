@@ -2,6 +2,7 @@
 
 nohup python -m sample_qc.ancestry_inference \
                  --exome_cohort 'chd_ukbb' \
+                 --skip_filter_step \
                  --n_pcs 20 \
                  --overwrite \
                  --write_to_file \
