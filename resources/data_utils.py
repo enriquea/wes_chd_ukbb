@@ -5,8 +5,8 @@ Set of function to retrieve paths from jointly called data as MatrixTable / Hail
 import hail as hl
 
 nfs_dir = 'file:///home/ubuntu/data'
-hdfs_dir = 'hdfs://spark-master:9820/dir'
-hdfs_tmp = 'hdfs://spark-master:9820/tmp'
+hdfs_dir = 'hdfs://spark-master:9820/dir/hail_data'
+hdfs_checkpoint_dir = 'hdfs://spark-master:9820/checkpoint'
 
 
 def get_mt_data(dataset: str = 'chd_ukbb', part: str = None) -> hl.MatrixTable:
@@ -30,9 +30,20 @@ def get_mt_data(dataset: str = 'chd_ukbb', part: str = None) -> hl.MatrixTable:
         raise DataException("Select one valid version of the dataset: unfiltered or filtered_high_callrate...")
 
 
-def get_qc_mt_path(dataset: str = 'chd_ukbb', part: str = None, split=False) -> str:
+def get_qc_mt_path(dataset: str = 'chd_ukbb', part: str = None, split=False, ld_pruned=False) -> str:
+    """
+    Generate path to MT where the results of a QC process should be read/written from/to.
+
+    :param dataset: Name of the exome cohort to be processed (e.g. <chd_ukbb> or <chd_ddd>)
+    :param part: Short description of the current QC process
+    :param split: Is the MT split?
+    :param ld_pruned: Is the MT LD pruned?
+
+    :return: Path to MT
+    """
     split = '.split' if split else ''
-    return f'{nfs_dir}/hail_data/mt_qc/{dataset}.qc.{part}{split}.mt'
+    ld_pruned = '.ld_pruned' if ld_pruned else ''
+    return f'{nfs_dir}/hail_data/mt_qc/{dataset}.qc.{part}{split}{ld_pruned}.mt'
 
 
 def get_sample_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None) -> str:
@@ -60,6 +71,20 @@ def get_interval_ht(name: str, reference: str) -> hl.Table:
         raise DataException('Invalid genome reference...must be one of GRCh37 and GRCh38')
 
     return hl.read_table(f'{nfs_dir}/resources/intervals/{name}.intervals.{reference}.ht')
+
+
+def get_1kg_mt(reference: str = 'GRCh38') -> hl.MatrixTable:
+    """
+    Return MT 1K genome phase 3 dataset.
+
+    :param reference: genome reference. One the One of GRCh37 and GRCh38.
+    :return:
+    """
+    return hl.read_matrix_table(f'{nfs_dir}/resources/1kgenome/phase3_1kg.snp_biallelic.{reference}.mt')
+
+
+def get_mt_checkpoint_path(dataset: str = 'dataset', part: str = '') -> str:
+    return f'{hdfs_checkpoint_dir}/{dataset}.{part}.checkpoint.mt'
 
 
 class DataException(Exception):
