@@ -11,18 +11,23 @@ be filtered out.
 The VEP-annotated VCF file is expected to be generated with the following vep setting:
 [vep run setting here]
 
-usage: vep_parser.py [-h] [--write_to_file] [--overwrite]
+usage: vep_parser.py [-h] [--vcf_vep_path VCF_VEP_PATH]
+                     [--tb_output_path TB_OUTPUT_PATH] [--csq_field CSQ_FIELD]
+                     [--force_bgz] [--write_to_file] [--overwrite]
                      [--default_ref_genome DEFAULT_REF_GENOME]
                      [--split_multi_allelic]
-                     vcf_vep_path tb_output_path csq_field
-
-positional arguments:
-  vcf_vep_path          Path to VEP-annotated VCF file
-  tb_output_path        Path to output HailTable with VEP annotations parsed
-  csq_field             Consequence field name in the VCF file
 
 optional arguments:
   -h, --help            show this help message and exit
+  --vcf_vep_path VCF_VEP_PATH
+                        Path to VEP-annotated VCF file
+  --tb_output_path TB_OUTPUT_PATH
+                        Path to output HailTable with VEP annotations parsed
+  --csq_field CSQ_FIELD
+                        Consequence field name in the VCF file
+  --force_bgz           If True, load .vcf.gz files as blocked gzip files,
+                        assuming that they were actually compressed using the
+                        BGZ codec.
   --write_to_file       Optionally, export the HailTable as a BGZ-compressed
                         TSV file
   --overwrite           Overwrite pre-existing data
@@ -30,6 +35,7 @@ optional arguments:
                         Default reference genome to start Hail
   --split_multi_allelic
                         Split multi allelic variants if any
+
 
 
 """
@@ -370,12 +376,15 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('vcf_vep_path', help='Path to VEP-annotated VCF file',
+    parser.add_argument('--vcf_vep_path', help='Path to VEP-annotated VCF file',
                         type=str, default=None)
-    parser.add_argument('tb_output_path', help='Path to output HailTable with VEP annotations parsed',
+    parser.add_argument('--tb_output_path', help='Path to output HailTable with VEP annotations parsed',
                         type=str, default=None)
-    parser.add_argument('csq_field', help='Consequence field name in the VCF file',
+    parser.add_argument('--csq_field', help='Consequence field name in the VCF file',
                         type=str, default='CSQ')
+    parser.add_argument('--force_bgz',
+                        help='If True, load .vcf.gz files as blocked gzip files, assuming that they were actually'
+                             ' compressed using the BGZ codec.', action='store_true')
     parser.add_argument('--write_to_file', help='Optionally, export the HailTable as a BGZ-compressed TSV file',
                         action='store_true')
     parser.add_argument('--overwrite', help='Overwrite pre-existing data', action='store_true')
