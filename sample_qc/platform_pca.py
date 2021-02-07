@@ -1,8 +1,48 @@
+# Adapted from gnomad.methods
+
+# Perform sample platform QC base on principal component analysis
+
+# usage: platform_pca.py [-h] [--mt_input_path MT_INPUT_PATH]
+#                        [--ht_output_path HT_OUTPUT_PATH]
+#                        [--ht_intervals HT_INTERVALS] [--write_to_file]
+#                        [--overwrite] [--default_ref_genome DEFAULT_REF_GENOME]
+#                        [--binarization_threshold BINARIZATION_THRESHOLD]
+#                        [--hdbscan_min_cluster_size HDBSCAN_MIN_CLUSTER_SIZE]
+#                        [--hdbscan_min_samples HDBSCAN_MIN_SAMPLES]
+#
+# optional arguments:
+#   -h, --help            show this help message and exit
+#   --mt_input_path MT_INPUT_PATH
+#                         Path to input Hail MatrixTable
+#   --ht_output_path HT_OUTPUT_PATH
+#                         Path to output HailTable with platform PCs
+#   --ht_intervals HT_INTERVALS
+#                         HailTable of intervals to use in the computation
+#   --write_to_file       Write output to BGZ-compressed file
+#   --overwrite           Overwrite results in HT output path if already
+#                         exists...
+#   --default_ref_genome DEFAULT_REF_GENOME
+#                         Default reference genome to start Hail
+#   --binarization_threshold BINARIZATION_THRESHOLD
+#                         If set, the callrate MT is transformed to a 0/1 value
+#                         MT based on the threshold. E.g. with the default
+#                         threshold of 0.25, all entries with a callrate < 0.25
+#                         are considered as 0s, others as 1s. Set to None if no
+#                         threshold desired
+#   --hdbscan_min_cluster_size HDBSCAN_MIN_CLUSTER_SIZE
+#                         HDBSCAN `min_cluster_size` parameter. If not specified
+#                         the smallest of 500 and 0.1*n_samples will be used.
+#   --hdbscan_min_samples HDBSCAN_MIN_SAMPLES
+#                         HDBSCAN `min_samples` parameter.
+#
+
 import logging
 from typing import List, Optional, Tuple
 
 import hail as hl
 import numpy as np
+import hdbscan
+import argparse
 
 from utils.expressions import bi_allelic_expr
 from utils.filter import filter_to_autosomes, filter_genotypes_ab
@@ -40,7 +80,8 @@ def compute_callrate_mt(
             intervals_ht.key[0], hl.expr.IntervalExpression
     ):
         logger.warning(
-            f"Call rate matrix computation expects `intervals_ht` with a key of type Interval. Found: {intervals_ht.key}"
+            f"Call rate matrix computation expects `intervals_ht` with a key of type Interval. "
+            f"Found: {intervals_ht.key}"
         )
 
     if autosomes_only:
@@ -121,7 +162,6 @@ def assign_platform_from_pcs(
     :param hdbscan_min_samples: HDBSCAN `min_samples` parameter
     :return: A Table with a `qc_platform` annotation containing the platform based on HDBSCAN clustering
     """
-    import hdbscan
 
     logger.info("Assigning platforms based on platform PCA clustering")
 
@@ -145,57 +185,102 @@ def assign_platform_from_pcs(
     )
 
     data["qc_platform"] = cluster_labels
-    # write pandas df temporal to disk until sort issue with python version between driver/executors
-    data.to_csv('/home/ubuntu/data/tmp/data_tmp_hdbscan.tsv',
-                index=False,
-                sep='\t')
-    ht = (hl.import_table('file:///home/ubuntu/data/tmp/data_tmp_hdbscan.tsv',
-                          impute=True)
-          .drop('scores')
-          )
-    ht = ht.annotate(scores=platform_pca_scores_ht[ht.s].scores)
-    ht = (ht
-          .annotate(**{f'PC{i + 1}': ht.scores[i] for i in range(10)})
-          .drop('scores')
-          )
-    # original solution (TODO: sort issue with 'from_pandas' function)
+
+    # Note: write pandas dataframe to disk and re-import as HailTable.
+    # This a temporary solution until sort the hail's issue with the function 'hl.Table.from_pandas'
+    # and different python versions between driver/executors.
+    (data
+     .drop(axis=1, labels=pc_scores_ann)
+     .to_csv('data_tmp_hdbscan.tsv', index=False, sep='\t')
+     )
+    ht_tmp = (hl.import_table('data_tmp_hdbscan.tsv', impute=True)
+              .key_by(*platform_pca_scores_ht.key)
+              )
+
+    ht = platform_pca_scores_ht.join(ht_tmp)
+
+    # original/elegant solution (TODO: sort issue with 'from_pandas' function)
     # ht = hl.Table.from_pandas(data, key=[*platform_pca_scores_ht.key])
+
+    # expand array structure and annotate scores (PCs) as individual fields.
+    # drop array scores field before to export the results.
+    n_pcs = len(ht[pc_scores_ann].take(1)[0])
+    ht = (ht
+          .annotate(**{f'platform_PC{i + 1}': ht[pc_scores_ann][i] for i in range(n_pcs)})
+          .drop(pc_scores_ann)
+          )
+
     ht = ht.annotate(qc_platform="platform_" + hl.str(ht.qc_platform))
     return ht
 
 
-#####
+def main(args):
+
+    # init hail
+    hl.init(default_reference=args.default_ref_genome)
+
+    # input MT
+    mt = hl.read_matrix_table(args.mt_input_path)
+
+    # filter high-quality genotype
+    mt = filter_genotypes_ab(mt)
+
+    # import capture interval table (intersect)
+    intervals = hl.read_table(args.ht_intervals)
+
+    # generate an interval x sample MT by computing per intervals callrate
+    mt_callrate = compute_callrate_mt(mt=mt,
+                                      intervals_ht=intervals)
+
+    # run pca
+    _, ht_pca, _ = run_platform_pca(callrate_mt=mt_callrate,
+                                    binarization_threshold=args.binarization_threshold)
+
+    # apply unsupervised clustering on PCs to infer samples platform
+    ht_platform = assign_platform_from_pcs(platform_pca_scores_ht=ht_pca,
+                                           pc_scores_ann='scores',
+                                           hdbscan_min_cluster_size=args.hdbscan_min_cluster_size,
+                                           hdbscan_min_samples=args.hdbscan_min_cluster_size)
+
+    ht_platform.show()
+
+    # write HT
+    ht_platform.write(output=args.ht_output_path,
+                      overwrite=args.overwrite)
+
+    # export to file if true
+    if args.write_to_file:
+        (ht_platform
+         .export(f'{args.ht_output_path}.tsv.bgz')
+         )
+
+    hl.stop()
 
 
-nfs_dir = 'file:///home/ubuntu/data'
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--mt_input_path', help='Path to input Hail MatrixTable')
+    parser.add_argument('--ht_output_path', help='Path to output HailTable with platform PCs')
+    parser.add_argument('--ht_intervals', help='HailTable of intervals to use in the computation')
+    parser.add_argument('--write_to_file', help='Write output to BGZ-compressed file',
+                        action='store_true')
+    parser.add_argument('--overwrite', help='Overwrite results in HT output path if already exists...',
+                        action='store_true')
+    parser.add_argument('--default_ref_genome', help='Default reference genome to start Hail',
+                        type=str, default='GRCh38')
+    parser.add_argument('--binarization_threshold',
+                        help='If set, the callrate MT is transformed to a 0/1 value MT based on the threshold. '
+                             'E.g. with the default threshold of 0.25, all entries with a callrate < 0.25 '
+                             'are considered as 0s, others as 1s. Set to None if no threshold desired',
+                        type=float, default=0.25)
 
-hl.init(default_reference='GRCh38')
+    # HDBSCAN parameters
+    parser.add_argument('--hdbscan_min_cluster_size',
+                        help='HDBSCAN `min_cluster_size` parameter. If not specified the smallest of 500 and '
+                             '0.1*n_samples will be used.', type=int, default=500)
+    parser.add_argument('--hdbscan_min_samples', help='HDBSCAN `min_samples` parameter.',
+                        type=int, default=None)
 
-# input MT
-mt = hl.read_matrix_table(f'{nfs_dir}/hail_data/mts/chd_ukbb_split_v2_09092020.mt')
+    args = parser.parse_args()
 
-# filter high-quality genotype
-mt = filter_genotypes_ab(mt)
-
-# exome capture interval table (intersect)
-capture_exome_interval = \
-    hl.read_table(f'{nfs_dir}/resources/intervals/agilent_ukbb/agilent_ukbb_overlap.no_alt_affected.bed.ht')
-
-mt_callrate = compute_callrate_mt(mt=mt,
-                                  intervals_ht=capture_exome_interval)
-
-_, ht_pca, _ = run_platform_pca(callrate_mt=mt_callrate,
-                                binarization_threshold=None)
-
-(ht_pca
- .annotate(**{f'PC{i + 1}': ht_pca.scores[i] for i in range(10)})
- .export(f'{nfs_dir}/hail_data/exome_platform_pca.tsv.bgz')
- )
-
-ht_platform = assign_platform_from_pcs(platform_pca_scores_ht=ht_pca,
-                                       pc_scores_ann='scores',
-                                       hdbscan_min_cluster_size=500)
-
-ht_platform.show()
-
-ht_platform.export(f'{nfs_dir}/hail_data/exome_platform_pca_hdbscan.tsv.bgz')
+    main(args)
