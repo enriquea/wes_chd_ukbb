@@ -1,7 +1,7 @@
 """
 
 pipeline modified from gnomad.methods.impute_sex_ploidy.
-Its compute per sample normalized mean coverage on
+It computes per sample normalized mean coverage on
 chromosome X and Y using an autosomal contig (e.g. chr20)
 
 """
