@@ -352,7 +352,11 @@ def main(args):
               )
 
     # drop redundant/temp fields
-    tb_csq = tb_csq.drop('csq_raw', 'tx')
+    tb_csq = (tb_csq
+              .drop('csq_raw', 'tx')
+              .repartition(500)
+             )
+    
 
     # print fields overview
     tb_csq.describe()
