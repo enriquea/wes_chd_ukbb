@@ -1,12 +1,42 @@
 """
 Compute relatedness estimates between individuals using a variant of the PC-Relate method.
 
-Usage example:
+usage: relatedness_inference.py [-h] [--mt_input_path MT_INPUT_PATH]
+                                [--ht_output_path HT_OUTPUT_PATH]
+                                [--default_reference DEFAULT_REFERENCE]
+                                [--write_to_file] [--overwrite]
+                                [--skip_filter_data]
+                                [--maf_threshold MAF_THRESHOLD]
+                                [--skip_prune_ld] [--r2 R2] [--n_pcs N_PCS]
+                                [--min_individual_maf MIN_INDIVIDUAL_MAF]
+                                [--min_kinship MIN_KINSHIP]
 
-python relatedness_inference.py --mt_path 'path/to/mt' \
-                                --ht_output_path 'path/to/hts' \
-                                --prune_ld \
-                                --write_to_file
+optional arguments:
+  -h, --help            show this help message and exit
+  --mt_input_path MT_INPUT_PATH
+                        Path to MatrixTable with computed QC metrics
+  --ht_output_path HT_OUTPUT_PATH
+                        Output HailTable path with Kinship stats
+  --default_reference DEFAULT_REFERENCE
+                        One of GRCh37 and GRCh38
+  --write_to_file       Write results to TSV file
+  --overwrite           Overwrite pre-existing data
+  --skip_filter_data    Skip filtering the input MT. Load pre-existing
+                        filtered MT to bi-allelic, high-callrate and common
+                        SNPs...
+  --maf_threshold MAF_THRESHOLD
+                        Exclude variants with maf lower than maf_threshold
+  --skip_prune_ld       Skip pruning variants in LD. It is recommended to
+                        prune LD-variants before running PCA
+  --r2 R2               Squared correlation threshold for LD pruning
+  --n_pcs N_PCS         Number of PCs to be computed
+  --min_individual_maf MIN_INDIVIDUAL_MAF
+                        Individual specif MAF cutoff used to run pc_relate
+                        method
+  --min_kinship MIN_KINSHIP
+                        Exclude pairs of samples with kinship lower than
+                        min_kinship
+
 """
 
 import argparse
@@ -22,31 +52,34 @@ hdfs_dir = 'hdfs://spark-master:9820'
 
 
 def main(args):
-
     # Init Hail
     hl.init(default_reference=args.default_reference)
 
-    # Read MatrixTable
-    mt = hl.read_matrix_table(args.mt_input_path)
+    if not args.skip_filter_data:
+        # Read MatrixTable
+        mt = hl.read_matrix_table(args.mt_input_path)
 
-    # filter variants (bi-allelic, high-callrate, common SNPs)
-    logger.info(f"Filtering to bi-allelic, high-callrate, common SNPs ({args.maf_threshold}) for pc_relate...")
+        # filter variants (bi-allelic, high-callrate, common SNPs)
+        logger.info(f"Filtering to bi-allelic, high-callrate, common SNPs ({args.maf_threshold}) for pc_relate...")
 
-    mt = (mt
-          .filter_rows((hl.len(mt.alleles) == 2) & hl.is_snp(mt.alleles[0], mt.alleles[1]) &
-                       (hl.agg.mean(mt.GT.n_alt_alleles()) / 2 > args.maf_threshold) &
-                       (hl.agg.fraction(hl.is_defined(mt.GT)) > 0.99) &
-                       ~mt.was_split)
-          .repartition(500, shuffle=False)
-          )
+        mt = (mt
+              .filter_rows((hl.len(mt.alleles) == 2) & hl.is_snp(mt.alleles[0], mt.alleles[1]) &
+                           (hl.agg.mean(mt.GT.n_alt_alleles()) / 2 > args.maf_threshold) &
+                           (hl.agg.fraction(hl.is_defined(mt.GT)) > 0.99) &
+                           ~mt.was_split)
+              .repartition(500, shuffle=False)
+              )
 
-    # keep only GT entry field and force to evaluate expression
-    mt = (mt
-          .select_entries(mt.GT)
-          .checkpoint(f'{hdfs_dir}/tmp/chd_ukbb.filtered_high_confidence_variants.mt')
-          )
+        # keep only GT entry field and force to evaluate expression
+        (mt
+         .select_entries(mt.GT)
+         .write(f'{hdfs_dir}/tmp/chd_ukbb.filtered_high_confidence_variants.mt',
+                overwrite=args.overwrite)
+         )
 
-    if args.prune_ld:
+    mt = hl.read_matrix_table(f'{hdfs_dir}/tmp/chd_ukbb.filtered_high_confidence_variants.mt')
+
+    if not args.skip_prune_ld:
         # LD pruning
         # Avoid filtering / missingness entries (genotypes) before run LP pruning
         # Zulip Hail support issue -> "BlockMatrix trouble when running pc_relate"
@@ -75,8 +108,8 @@ def main(args):
     scores.write(f'{hdfs_dir}/tmp/chd_ukbb.pruned.pca_scores_for_pc_relate.ht',
                  overwrite=args.overwrite)
 
-    logger.info(f'Running PC-_Relate...')
-    scores = hl.read_table(f'{hdfs_dir}/tmp/chd_ukbb.pruned.pca_scores.ht')
+    logger.info(f'Running PC-Relate...')
+    scores = hl.read_table(f'{hdfs_dir}/tmp/chd_ukbb.pruned.pca_scores_for_pc_relate.ht')
     relatedness_ht = hl.pc_relate(call_expr=pruned_mt.GT,
                                   min_individual_maf=args.min_individual_maf,
                                   scores_expr=scores[pruned_mt.col_key].scores,
@@ -88,17 +121,13 @@ def main(args):
 
     logger.info(f'Writing relatedness table...')
     # Write/export table to file
-    tb = (relatedness_ht
-          .flatten()
-          .key_by('i.s', 'j.s')
-          )
-
-    tb.write(output=args.ht_output_path)
+    relatedness_ht = relatedness_ht.checkpoint(output=args.ht_output_path,
+                                               overwrite=args.overwrite)
 
     # Write PCs table to file (if specified)
     if args.write_to_file:
         # Export table to file
-        tb.export(output=f'{args.ht_output_path}.tsv.bgz')
+        relatedness_ht.export(output=f'{args.ht_output_path}.tsv.bgz')
 
     hl.stop()
 
@@ -109,18 +138,23 @@ if __name__ == '__main__':
     parser.add_argument('--mt_input_path', help='Path to MatrixTable with computed QC metrics', type=str, default=None)
     parser.add_argument('--ht_output_path', help='Output HailTable path with Kinship stats', type=str, default=None)
     parser.add_argument('--default_reference', help='One of GRCh37 and GRCh38', type=str, default='GRCh38')
+    parser.add_argument('--write_to_file', help='Write results to TSV file', action='store_true')
+    parser.add_argument('--overwrite', help='Overwrite pre-existing data', action='store_true')
+
+    # actions for controling filtering step
+    parser.add_argument('--skip_filter_data', help='Skip filtering the input MT. Load pre-existing filtered MT to \
+                                                    bi-allelic, high-callrate and common SNPs...', action='store_true')
     parser.add_argument('--maf_threshold', help='Exclude variants with maf lower than maf_threshold',
                         type=float, default=0.001)
-    parser.add_argument('--write_to_file', help='Write results to TSV file', action='store_true')
-
-    # parameters for ld_prune
-    parser.add_argument('--prune_ld', help='Perform LD pruning before PCA (recommended)', action='store_true')
+    # actions for ld_prune
+    parser.add_argument('--skip_prune_ld', help='Skip pruning variants in LD. It is recommended to prune LD-variants \
+                                                 before running PCA', action='store_true')
     parser.add_argument('--r2', help='Squared correlation threshold for LD pruning', type=float, default=0.1)
 
-    # parameters for pca
+    # actions for pca
     parser.add_argument('--n_pcs', help='Number of PCs to be computed', type=int, default=10)
 
-    # parameters for pc_relate
+    # actions for pc_relate
     parser.add_argument('--min_individual_maf', help='Individual specif MAF cutoff used to run pc_relate method',
                         type=float, default=0.05)
     parser.add_argument('--min_kinship', help='Exclude pairs of samples with kinship lower than min_kinship',
