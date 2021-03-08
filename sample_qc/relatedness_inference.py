@@ -102,6 +102,9 @@ def main(args):
     v, s = pruned_mt.count()
     logger.info(f'{s} samples, {v} variants found in LD-pruned MT')
 
+    pruned_mt = pruned_mt.select_entries(
+        GT=hl.unphased_diploid_gt_index_call(pruned_mt.GT.n_alt_alleles()))
+
     # run pc_relate method...compute all stats
     logger.info('Running PCA for PC-Relate...')
     eig, scores, _ = hl.hwe_normalized_pca(pruned_mt.GT, k=10, compute_loadings=False)
@@ -115,7 +118,7 @@ def main(args):
                                   scores_expr=scores[pruned_mt.col_key].scores,
                                   block_size=4096,
                                   min_kinship=args.min_kinship,
-                                  statistics='kin2')
+                                  statistics='all')
 
     # TODO: retrieve maximal independent sample set
 
@@ -158,7 +161,7 @@ if __name__ == '__main__':
     parser.add_argument('--min_individual_maf', help='Individual specif MAF cutoff used to run pc_relate method',
                         type=float, default=0.05)
     parser.add_argument('--min_kinship', help='Exclude pairs of samples with kinship lower than min_kinship',
-                        type=float, default=0.05)
+                        type=float, default=0.1)
 
     args = parser.parse_args()
 
