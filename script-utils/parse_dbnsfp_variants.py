@@ -19,12 +19,12 @@ import os
 
 hl.init(default_reference='GRCh38')
 
-path_file_in = './testdata/dbNSFP4.1a_variant.test.bgz'
+path_file_in = '../testdata/dbNSFP4.1a_variant.test.bgz'
 path_ht_out = f'{os.path.splitext(path_file_in)[0]}.ht'
 
 ht = hl.import_table(paths=path_file_in,
                      min_partitions=500,
-                     impute=True,
+                     impute=False,
                      missing='.',
                      force_bgz=True)
 
@@ -54,12 +54,27 @@ ht = (ht.select('locus',
       .key_by('locus', 'alleles')
       )
 
-# Some numeric fields are not correctly imputed with its proper type (e.g. MPC_score, MVP_score).
-# Parsing here...
-float_fields = ['MPC_score', 'MVP_score']
+
+# Map scores to transcript. If a score is site-specific rather than
+# transcript-specific, map the same value to all transcripts.
 ht = (ht
-      .transmute(**{f: hl.parse_float(ht[f])
-                    for f in float_fields})
+      .annotate(Ensembl_transcriptid=ht.Ensembl_transcriptid.split(";"))
+      )
+
+scores_fields = [f for f in ht.row if f.endswith('_score')]
+ht = (ht
+      .transmute(**{f: hl.if_else(ht[f].contains(";"),
+                                  hl.dict(hl.zip(ht.Ensembl_transcriptid,
+                                                 hl.map(lambda x:
+                                                        hl.parse_float(x),
+                                                        ht[f].split(";")))),
+                                  hl.dict(hl.zip(ht.Ensembl_transcriptid,
+                                                 hl.map(lambda x:
+                                                        hl.parse_float(ht[f]),
+                                                        ht.Ensembl_transcriptid)))
+                                  )
+                    for f in scores_fields
+                    })
       )
 
 # nest related fields into structures (easier to analyse/filter later)
@@ -76,6 +91,7 @@ ht.describe()
 
 # export table
 ht.write(path_ht_out,
-         overwrite=False)
+         overwrite=True)
+
 
 hl.stop()
