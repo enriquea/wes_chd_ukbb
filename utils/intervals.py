@@ -89,6 +89,12 @@ def generate_interval_list_ht() -> hl.Table:
                  get_ssv4_intervals_ht(),
                  get_ssv5_intervals_ht(),
                  get_idt_xgen_intervals_ht()]
+    
+    # keep only the interval <key> field for all tables
+    intervals = [ht
+                 .key_by('interval')
+                 .select()
+                 for ht in intervals]
 
     ht_interval = (hl.Table.union(*intervals)
                    .select_globals()
