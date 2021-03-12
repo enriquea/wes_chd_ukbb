@@ -1,14 +1,14 @@
 """
 
-Useful generic functions taken/adapted from:
-[gnomad_methods repo url]
+Useful generic functions
 
 """
 
 import hail as hl
+import time
 
 
-# unphase MatrixTable
+# unphase MatrixTable (from gnomad_methods)
 def unphase_mt(mt: hl.MatrixTable) -> hl.MatrixTable:
     """
     Generate unphased version of MatrixTable (assumes call is in mt.GT and is diploid or haploid only)
@@ -20,5 +20,11 @@ def unphase_mt(mt: hl.MatrixTable) -> hl.MatrixTable:
                                )
 
 
+# print current date
+def current_date() -> str:
+    return time.strftime("%d%m%Y")
 
 
+# get Hail version
+def hail_version() -> str:
+    return hl.__version__

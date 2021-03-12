@@ -1,6 +1,6 @@
 """
 
-Taken/modified from gnomad.methods.utils module
+Modified from gnomad.methods.utils module
 
 """
 
@@ -15,6 +15,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+# genome references
+rg37 = hl.get_reference('GRCh37')
+rg38 = hl.get_reference('GRCh38')
+
+# dict contig recode from rg38 -> rg37.
+# only autosomal and sex chromosomes
+CONTIG_RECODING_HG38_TO_HG37 = {contig: contig.replace('chr', '')
+                                for contig in rg38.contigs[:24]}
+
+# dict contig recode from rg37 -> rg38.
+# only autosomal and sex chromosomes
+CONTIG_RECODING_HG37_TO_HG38 = {CONTIG_RECODING_HG38_TO_HG37.get(k): k
+                                for k in CONTIG_RECODING_HG38_TO_HG37.keys()}
 
 
 def get_reference_ht(

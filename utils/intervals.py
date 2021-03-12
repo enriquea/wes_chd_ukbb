@@ -23,23 +23,13 @@ Key: ['interval']
 """
 
 import hail as hl
-import time
+
+from utils.generic import current_date
+from utils.reference_genome import (CONTIG_RECODING_HG37_TO_HG38,
+                                    CONTIG_RECODING_HG38_TO_HG37)
 
 nfs_dir = 'file:///home/ubuntu/data'
 
-# genome references
-rg37 = hl.get_reference('GRCh37')
-rg38 = hl.get_reference('GRCh38')
-
-# recode contig from rg38 -> rg37.
-# only autosomal and sex chromosomes
-CONTIG_RECODING_HG38_TO_HG37 = {contig: contig.replace('chr', '')
-                                for contig in rg38.contigs[:24]}
-
-# recode contig from rg37 -> rg38.
-# only autosomal and sex chromosomes
-CONTIG_RECODING_HG37_TO_HG38 = {CONTIG_RECODING_HG38_TO_HG37.get(k): k
-                                for k in CONTIG_RECODING_HG38_TO_HG37.keys()}
 
 # required global fields to be annotated in the interval HT
 GLOBAL_ANNOTATION_FIELDS = ('date',  # date table was created
@@ -47,10 +37,6 @@ GLOBAL_ANNOTATION_FIELDS = ('date',  # date table was created
                             'reference_genome',  # genome build
                             'platform_label'  # unique label
                             )
-
-
-def current_date() -> str:
-    return time.strftime("%d%m%Y")
 
 
 def _get_interval_ht_path(platform_label: str,
