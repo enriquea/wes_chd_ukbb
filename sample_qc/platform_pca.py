@@ -47,6 +47,9 @@ import argparse
 from utils.expressions import bi_allelic_expr
 from utils.filter import filter_to_autosomes, filter_genotypes_ab
 
+nfs_dir = 'file:///home/ubuntu/data'
+local_dir = '/home/ubuntu/data'
+
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -191,9 +194,9 @@ def assign_platform_from_pcs(
     # and different python versions between driver/executors.
     (data
      .drop(axis=1, labels=pc_scores_ann)
-     .to_csv('data_tmp_hdbscan.tsv', index=False, sep='\t')
+     .to_csv(f'{local_dir}/tmp/data_tmp_hdbscan.tsv', index=False, sep='\t')
      )
-    ht_tmp = (hl.import_table('data_tmp_hdbscan.tsv', impute=True)
+    ht_tmp = (hl.import_table(f'{nfs_dir}/tmp/data_tmp_hdbscan.tsv', impute=True)
               .key_by(*platform_pca_scores_ht.key)
               )
 

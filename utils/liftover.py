@@ -15,9 +15,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-hl.init()
 
-project_dir = 'file:///home/ubuntu/data/projects/wes_chd_ukbb'
+nfs_dir = 'file:///home/ubuntu/data'
 
 
 def liftover_intervals(t: hl.Table,
@@ -48,7 +47,7 @@ def liftover_intervals(t: hl.Table,
 
     if not rg37.has_liftover("GRCh38"):
         rg37.add_liftover(
-            f'{project_dir}/data/resources/grch37_to_grch38.over.chain.gz', rg38
+            f'{nfs_dir}/resources/liftover/grch37_to_grch38.over.chain.gz', rg38
         )
 
     t = t.annotate(

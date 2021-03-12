@@ -6,9 +6,11 @@ Generate intervals HT from different exome capture products
 
 import hail as hl
 
-from testscripts.liftover_intervals import liftover_intervals
+from utils.liftover import liftover_intervals
 from utils.intervals import (import_intervals_from_bed,
+                             generate_interval_list_ht,
                              write_intervals_ht)
+
 
 hl.init()
 
@@ -84,5 +86,11 @@ idt_xgen = import_intervals_from_bed(
     genome_ref='GRCh38')
 write_intervals_ht(idt_xgen, overwrite=True)
 
-hl.stop()
+#### Intervals union list ####
+
+ht_intervals = generate_interval_list_ht()
+ht_intervals.write(
+    f'{nfs_dir}/resources/intervals/list.intervals.GRCh38.ht',
+    overwrite=True)
+
 
