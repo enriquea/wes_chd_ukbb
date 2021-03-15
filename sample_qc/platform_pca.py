@@ -44,6 +44,8 @@ import numpy as np
 import hdbscan
 import argparse
 
+from gnomad.utils.annotations import annotate_adj
+
 from utils.expressions import bi_allelic_expr
 from utils.filter import filter_to_autosomes, filter_genotypes_ab
 
@@ -226,7 +228,7 @@ def main(args):
     mt = hl.read_matrix_table(args.mt_input_path)
 
     # filter high-quality genotype
-    mt = filter_genotypes_ab(mt)
+    # mt = filter_genotypes_ab(mt)
 
     # import capture interval table (intersect)
     intervals = hl.read_table(args.ht_intervals)
@@ -236,8 +238,25 @@ def main(args):
                                       intervals_ht=intervals)
 
     # run pca
-    _, ht_pca, _ = run_platform_pca(callrate_mt=mt_callrate,
-                                    binarization_threshold=args.binarization_threshold)
+    eigenvalues, ht_pca, _ = run_platform_pca(callrate_mt=mt_callrate,
+                                              binarization_threshold=args.binarization_threshold)
+    
+    # normalize eigenvalues (0-100)
+    eigenvalues_norm = [x/sum(eigenvalues)*100 for x in eigenvalues]
+    
+    # compute eigenvalues cumulative sum
+    ev_cumsum = hl.array_scan(lambda i, j: i + j, 0, 
+                              hl.array(eigenvalues_norm))
+    
+    # getting optimal number of PCs (those which explain 99% of the variance)
+    n_optimal_pcs = hl.eval(
+        hl.len(ev_cumsum.filter(lambda x: x < 99.0)))
+    
+    logger.info(
+        f"Keep only principal components which explain up to 99% of the variance. Number of optimal PCs found: {n_optimal_pcs}")
+    
+    # filter out uninformative PCs
+    ht_pca = ht_pca.annotate(scores=ht_pca.scores[:n_optimal_pcs])
 
     # apply unsupervised clustering on PCs to infer samples platform
     ht_platform = assign_platform_from_pcs(platform_pca_scores_ht=ht_pca,
