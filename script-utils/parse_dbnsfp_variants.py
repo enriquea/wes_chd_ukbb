@@ -19,7 +19,9 @@ import os
 
 hl.init(default_reference='GRCh38')
 
-path_file_in = '../testdata/dbNSFP4.1a_variant.test.bgz'
+nfs_dir = 'file:///home/ubuntu/data'
+
+path_file_in = f'{nfs_dir}/resources/dbNSFP/variants/dbNSFP4.1a_variant.bgz'
 path_ht_out = f'{os.path.splitext(path_file_in)[0]}.ht'
 
 ht = hl.import_table(paths=path_file_in,
