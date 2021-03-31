@@ -203,7 +203,7 @@ def main(args):
 
         # Annotate sample meta info
         # Note: Temporal solution, better to import annotated MT
-        mt = (mt.annotate_cols(get_sample_meta_data()[mt.col_key]))
+        mt = (mt.annotate_cols(**get_sample_meta_data()[mt.col_key]))
 
         mt = (mt
               .annotate_cols(case_control=hl.if_else(mt[args.phe_field],
