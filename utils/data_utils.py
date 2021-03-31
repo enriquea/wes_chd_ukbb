@@ -56,16 +56,19 @@ def get_sample_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None) -> str:
 
 def get_interval_ht(name: str, reference: str) -> hl.Table:
     """
-    Return interval HT used during the filtering process
+    Return interval HT from different capture products
 
-    :param name: name/description of the interval to be returned.
+    :param name: name/description of the interval HT to be returned.
+                 - ssv2: Agilent SureSelect Clinical Exomes V2
+                 - ssv3: Agilent SureSelect V3
+                 - ssv4: Agilent SureSelect V4
                  - ssv5: Agilent SureSelect V5
                  - idt_xgen: IDT XGEN panel V1
                  - ssv5_idt_intersect: Interval intersect SSV5/IDT
-    :param reference: genome reference. One the One of GRCh37 and GRCh38.
+    :param reference: genome reference. One of GRCh37 and GRCh38.
     :return: Interval HT
     """
-    if name not in ('ssv5', 'idt_xgen', 'ssv5_idt_intersect'):
+    if name not in ('ssv2', 'ssv3', 'ssv4', 'ssv5', 'idt_xgen', 'ssv5_idt_intersect'):
         raise DataException('Invalid interval name...')
     if reference not in ('GRCh37', 'GRCh38'):
         raise DataException('Invalid genome reference...must be one of GRCh37 and GRCh38')
@@ -78,13 +81,25 @@ def get_1kg_mt(reference: str = 'GRCh38') -> hl.MatrixTable:
     Return MT 1K genome phase 3 dataset.
 
     :param reference: genome reference. One the One of GRCh37 and GRCh38.
-    :return:
+    :return: MatrixTable
     """
     return hl.read_matrix_table(f'{nfs_dir}/resources/1kgenome/phase3_1kg.snp_biallelic.{reference}.mt')
 
 
 def get_mt_checkpoint_path(dataset: str = 'dataset', part: str = '') -> str:
     return f'{hdfs_checkpoint_dir}/{dataset}.{part}.checkpoint.mt'
+
+
+def get_sample_meta_data() -> hl.Table:
+    """
+    Return HT with sample meta information (e.g. phenotypes, cohort, release permission, etc...)
+    :return: Hail Table
+    """
+    return hl.import_table(
+        f"{nfs_dir}/projects/wes_chd_ukbb/data/annotation/samples/sample.annotation.wes50k.final.u01032021.tsv",
+        min_partitions=50,
+        key='ega_id'
+       )
 
 
 class DataException(Exception):

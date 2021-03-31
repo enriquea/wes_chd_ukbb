@@ -60,6 +60,7 @@ from typing import List
 import hail as hl
 
 from utils.generic import current_date
+from utils.data_utils import get_sample_meta_data
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -199,6 +200,10 @@ def main(args):
     # ***
     if args.compute_phe_coverage:
         logger.info(f"Computing coverage stats stratified by phenotype status...")
+
+        # Annotate sample meta info
+        # Note: Temporal solution, better to import annotated MT
+        mt = (mt.annotate_cols(get_sample_meta_data()[mt.col_key]))
 
         mt = (mt
               .annotate_cols(case_control=hl.if_else(mt[args.phe_field],
@@ -340,8 +345,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--mt_input_path',
-                        help='Path to input Hail MatrixTable',
-                        default='chd_ukbb.trios.chr20XY21.test.mt')
+                        help='Path to input Hail MatrixTable')
 
     parser.add_argument('--ht_output_path', help='Path to output HailTable with coverage stats')
 
