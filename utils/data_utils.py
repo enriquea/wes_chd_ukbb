@@ -98,6 +98,7 @@ def get_sample_meta_data() -> hl.Table:
     return hl.import_table(
         f"{nfs_dir}/projects/wes_chd_ukbb/data/annotation/samples/sample.annotation.wes50k.final.u01032021.tsv",
         min_partitions=50,
+        impute=True,
         key='ega_id'
        )
 
