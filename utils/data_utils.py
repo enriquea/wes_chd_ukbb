@@ -47,7 +47,6 @@ def get_qc_mt_path(dataset: str = 'chd_ukbb', part: str = None, split=False, ld_
 
 
 def get_sample_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None) -> str:
-
     if part not in ('sex_chrom_coverage', 'hard_filters', 'joint_pca_1kg'):
         raise DataException('Expected part one of: sex_chrom_coverage, hard_filters')
 
@@ -100,7 +99,36 @@ def get_sample_meta_data() -> hl.Table:
         min_partitions=50,
         impute=True,
         key='ega_id'
-       )
+    )
+
+
+##### gnomad resources #####
+
+def get_gnomad_genomes_coverage_ht() -> hl.Table:
+    return hl.import_table(
+        f"{nfs_dir}/resources/gnomad/gnomad.genomes.r3.0.1.coverage.summary.tsv.bgz",
+        min_partitions=1000,
+        impute=True,
+        key='locus'
+    )
+
+
+def get_gene_lof_metrics_ht() -> hl.Table:
+    return hl.import_table(
+        f"{nfs_dir}/resources/gnomad/gnomad.v2.1.1.lof_metrics.by_gene.txt.bgz",
+        min_partitions=100,
+        impute=True,
+        key='gene'
+    )
+
+
+def get_transcript_lof_metrics_ht() -> hl.Table:
+    return hl.import_table(
+        f"{nfs_dir}/resources/gnomad/gnomad.v2.1.1.lof_metrics.by_transcript.txt.bgz",
+        min_partitions=100,
+        impute=True,
+        key='transcript'
+    )
 
 
 class DataException(Exception):
