@@ -273,6 +273,7 @@ def main(args):
                             "fail")}
         )
     if args.compute_phe_coverage:
+        # DOI: https://doi.org/10.1016/j.ajhg.2018.08.016
         coverage_filter_dict_expr.update(
             {'phe_hard_cutoff':
                  hl.if_else((tb_variants.case.over_10 >= min_sample_prop) &

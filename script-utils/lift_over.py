@@ -1,9 +1,14 @@
 # eam
 # 2021-02-16
 
-from gnomad.utils.liftover import *
+"""
 
-from utils.reference_genome import rg38
+Use the gnomad liftover utilities to translate
+some data from one genome coordinate to other.
+
+"""
+
+from gnomad.utils.liftover import *
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -16,6 +21,8 @@ hl.init()
 
 project_dir = 'file:///home/ubuntu/data/projects/wes_chd_ukbb'
 
+rg37 = hl.get_reference("GRCh37")
+rg38 = hl.get_reference("GRCh38")
 
 # lift over german AFs (hg37 -> hg38)
 path_ht_ger_af_hg37 = f'{project_dir}/data/resources/german_pop_af.ht'

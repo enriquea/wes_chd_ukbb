@@ -79,7 +79,7 @@ def get_1kg_mt(reference: str = 'GRCh38') -> hl.MatrixTable:
     """
     Return MT 1K genome phase 3 dataset.
 
-    :param reference: genome reference. One the One of GRCh37 and GRCh38.
+    :param reference: genome reference. One of GRCh37 and GRCh38.
     :return: MatrixTable
     """
     return hl.read_matrix_table(f'{nfs_dir}/resources/1kgenome/phase3_1kg.snp_biallelic.{reference}.mt')
