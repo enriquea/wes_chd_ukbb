@@ -56,27 +56,27 @@ ht = (ht.select('locus',
       .key_by('locus', 'alleles')
       )
 
-
 # Map scores to transcript. If a score is site-specific rather than
 # transcript-specific, map the same value to all transcripts.
 ht = (ht
       .annotate(Ensembl_transcriptid=ht.Ensembl_transcriptid.split(";"))
       )
 
-scores_fields = [f for f in ht.row if f.endswith('_score')]
+scores_fields = [f for f in ht.row if f.endswith('_score') or f == 'CADD_phred']
+
 ht = (ht
-      .transmute(**{f: hl.if_else(ht[f].contains(";"),
-                                  hl.dict(hl.zip(ht.Ensembl_transcriptid,
-                                                 hl.map(lambda x:
-                                                        hl.parse_float(x),
-                                                        ht[f].split(";")))),
-                                  hl.dict(hl.zip(ht.Ensembl_transcriptid,
-                                                 hl.map(lambda x:
-                                                        hl.parse_float(ht[f]),
-                                                        ht.Ensembl_transcriptid)))
-                                  )
-                    for f in scores_fields
-                    })
+      .annotate(**{f: hl.if_else(ht[f].contains(";"),
+                                 hl.dict(hl.zip(ht.Ensembl_transcriptid,
+                                                hl.map(lambda x:
+                                                       hl.parse_float(x),
+                                                       ht[f].split(";")))),
+                                 hl.dict(hl.zip(ht.Ensembl_transcriptid,
+                                                hl.map(lambda x:
+                                                       hl.parse_float(ht[f]),
+                                                       ht.Ensembl_transcriptid)))
+                                 )
+                   for f in scores_fields
+                   })
       )
 
 # nest related fields into structures (easier to analyse/filter later)
@@ -94,6 +94,5 @@ ht.describe()
 # export table
 ht.write(path_ht_out,
          overwrite=True)
-
 
 hl.stop()
