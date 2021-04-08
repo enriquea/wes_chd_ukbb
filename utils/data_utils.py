@@ -102,6 +102,16 @@ def get_sample_meta_data() -> hl.Table:
     )
 
 
+def get_chd_denovo_ht() -> hl.Table():
+    """
+    Return a list of de novo mutations called from CHD trios.
+    Curated from two studies, Jin 2017 and Sifrim-Hitz 2016.
+
+    :return: Hail Table
+    """
+    return hl.read_table(f'{nfs_dir}/resources/denovo/DNM_Jin2017_Sifrim2016_GRCh38_lift.ht')
+
+
 ##### gnomad resources #####
 
 def get_gnomad_genomes_coverage_ht() -> hl.Table:
