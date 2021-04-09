@@ -25,7 +25,7 @@ path_file_in = f'{nfs_dir}/resources/dbNSFP/variants/dbNSFP4.1a_variant.bgz'
 path_ht_out = f'{os.path.splitext(path_file_in)[0]}.ht'
 
 ht = hl.import_table(paths=path_file_in,
-                     min_partitions=500,
+                     min_partitions=1000,
                      impute=False,
                      missing='.',
                      force_bgz=True)
@@ -58,6 +58,7 @@ ht = (ht.select('locus',
 
 # Map scores to transcript. If a score is site-specific rather than
 # transcript-specific, map the same value to all transcripts.
+# TODO: split genename, protein name, VEP_canonical ect...
 ht = (ht
       .annotate(Ensembl_transcriptid=ht.Ensembl_transcriptid.split(";"))
       )
@@ -81,6 +82,7 @@ ht = (ht
 
 # nest related fields into structures (easier to analyse/filter later)
 field_groups = ['gnomAD', 'ExAC', '1000Gp3', 'ESP6500', 'clinvar']  # fold these groups into structures
+# TODO: split parse int, float fields
 ht = (ht
       .transmute(**{f_root: hl.struct(**{field: ht[field]
                                          for field in tb_fields if field.startswith(f_root)}
