@@ -102,7 +102,7 @@ def get_sample_meta_data() -> hl.Table:
     )
 
 
-def get_chd_denovo_ht() -> hl.Table():
+def get_chd_denovo_ht() -> hl.Table:
     """
     Return a list of de novo mutations called from CHD trios.
     Curated from two studies, Jin 2017 and Sifrim-Hitz 2016.
