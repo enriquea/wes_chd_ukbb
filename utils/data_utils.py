@@ -102,6 +102,16 @@ def get_sample_meta_data() -> hl.Table:
     )
 
 
+def get_fam_file() -> hl.Table:
+    """
+    Return fam table (trio information)
+    :return: Hail Table
+    """
+    return hl.import_fam(
+        f"{nfs_dir}/projects/wes_chd_ukbb/data/annotation/samples/sample.complete_trios.wes50k.02022021.noheader.fam"
+    )
+
+
 def get_chd_denovo_ht() -> hl.Table:
     """
     Return a list of de novo mutations called from CHD trios.
