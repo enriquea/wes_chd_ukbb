@@ -51,7 +51,10 @@ def get_sample_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None) -> str:
     qc_parts = ['sex_chrom_coverage',
                 'hard_filters',
                 'joint_pca_1kg',
-                'platform_pca']
+                'platform_pca',
+                'population_qc',
+                'high_conf_autosomes',
+                'stratified_metrics_filter']
 
     if part not in qc_parts:
         raise DataException(f'Expected part one of: {qc_parts}')
