@@ -62,7 +62,7 @@ def get_sample_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None) -> str:
     return f'{nfs_dir}/hail_data/sample_qc/{dataset}.sample_qc.{part}.ht'
 
 
-def get_interval_ht(name: str, reference: str) -> hl.Table:
+def get_capture_interval_ht(name: str, reference: str) -> hl.Table:
     """
     Return interval HT from different capture products
 
