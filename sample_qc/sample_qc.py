@@ -294,7 +294,9 @@ def main(args):
     )
 
     # annotate sample population and platform qc info
-    pop_qc = get_sample_pop_qc()
+    pop_qc = hl.read_table(
+        get_sample_qc_ht_path(part='population_qc')
+    )
     platform_qc = hl.read_table(
         get_sample_qc_ht_path(part='platform_pca')
     )
