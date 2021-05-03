@@ -47,8 +47,14 @@ def get_qc_mt_path(dataset: str = 'chd_ukbb', part: str = None, split=False, ld_
 
 
 def get_sample_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None) -> str:
-    if part not in ('sex_chrom_coverage', 'hard_filters', 'joint_pca_1kg'):
-        raise DataException('Expected part one of: sex_chrom_coverage, hard_filters')
+
+    qc_parts = ['sex_chrom_coverage',
+                'hard_filters',
+                'joint_pca_1kg',
+                'platform_pca']
+
+    if part not in qc_parts:
+        raise DataException(f'Expected part one of: {qc_parts}')
 
     return f'{nfs_dir}/hail_data/sample_qc/{dataset}.sample_qc.{part}.ht'
 
@@ -110,6 +116,15 @@ def get_fam_file() -> hl.Table:
     return hl.import_fam(
         f"{nfs_dir}/projects/wes_chd_ukbb/data/annotation/samples/sample.complete_trios.wes50k.02022021.noheader.fam"
     )
+
+
+def get_sample_pop_qc() -> hl.Table:
+    return hl.import_table(
+        f"{nfs_dir}/projects/wes_chd_ukbb/data/annotation/samples/chd_ukbb_population_predicted_pca_rf_09102020.txt",
+        min_partitions=50,
+        no_header=False,
+        impute=True
+    ).key_by('s')
 
 
 def get_chd_denovo_ht() -> hl.Table:
