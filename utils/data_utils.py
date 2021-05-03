@@ -123,7 +123,8 @@ def get_sample_pop_qc() -> hl.Table:
         f"{nfs_dir}/projects/wes_chd_ukbb/data/annotation/samples/chd_ukbb_population_predicted_pca_rf_09102020.txt",
         min_partitions=50,
         no_header=False,
-        impute=True
+        impute=True,
+        quote='"',
     ).key_by('s')
 
 
