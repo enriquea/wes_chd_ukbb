@@ -310,7 +310,7 @@ def main(args):
 
     # Export HT to file
     if args.write_to_file:
-        (sample_qc_ht.export(
+        (sample_qc_ht.flatten().export(
             f"{get_sample_qc_ht_path(dataset=args.exome_cohort, part='high_conf_autosomes')}.tsv.bgz")
          )
 
