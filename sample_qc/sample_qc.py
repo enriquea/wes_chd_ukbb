@@ -290,7 +290,8 @@ def main(args):
     # Write HT with sample QC metrics
     sample_qc_ht = sample_qc_ht.checkpoint(
         get_sample_qc_ht_path(dataset=args.exome_cohort, part='high_conf_autosomes'),
-        overwrite=args.overwrite
+        overwrite=args.overwrite,
+        _read_if_exists=not args.overwrite
     )
 
     # annotate sample population and platform qc info
@@ -309,7 +310,7 @@ def main(args):
 
     # Export HT to file
     if args.write_to_file:
-        (sample_qc_ht.export(
+        (sample_qc_ht.flatten().export(
             f"{get_sample_qc_ht_path(dataset=args.exome_cohort, part='high_conf_autosomes')}.tsv.bgz")
          )
 
@@ -328,7 +329,8 @@ def main(args):
 
     exome_pop_platform_filter_ht = exome_pop_platform_filter_ht.checkpoint(
         get_sample_qc_ht_path(dataset=args.exome_cohort, part='stratified_metrics_filter'),
-        overwrite=args.overwrite
+        overwrite=args.overwrite,
+        _read_if_exists=not args.overwrite
     )
 
     # Export HT to file
