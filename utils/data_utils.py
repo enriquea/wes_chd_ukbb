@@ -47,7 +47,6 @@ def get_qc_mt_path(dataset: str = 'chd_ukbb', part: str = None, split=False, ld_
 
 
 def get_sample_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None) -> str:
-
     qc_parts = ['sex_chrom_coverage',
                 'hard_filters',
                 'joint_pca_1kg',
@@ -111,13 +110,23 @@ def get_sample_meta_data() -> hl.Table:
     )
 
 
-def get_fam_file() -> hl.Table:
+def get_fam_path() -> str:
+    """
+    Return fam file path
+    :return: Path to fam file
+    """
+    return (
+        f"{nfs_dir}/projects/wes_chd_ukbb/data/annotation/samples/sample.complete_trios.wes50k.u01032021.noheader.fam"
+    )
+
+
+def import_fam_ht() -> hl.Table:
     """
     Return fam table (trio information)
     :return: Hail Table
     """
     return hl.import_fam(
-        f"{nfs_dir}/projects/wes_chd_ukbb/data/annotation/samples/sample.complete_trios.wes50k.02022021.noheader.fam"
+        get_fam_path()
     )
 
 
@@ -167,6 +176,12 @@ def get_transcript_lof_metrics_ht() -> hl.Table:
         min_partitions=100,
         impute=True,
         key='transcript'
+    )
+
+
+def get_gnomad_genomes_v3_af_ht() -> hl.Table:
+    return hl.read_table(
+        f"{nfs_dir}/resources/gnomad/gnomad_v3/gnomad_3.0_sites_AF.ht",
     )
 
 
