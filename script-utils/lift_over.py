@@ -31,8 +31,8 @@ if not rg37.has_liftover("GRCh38"):
     )
 
 # lift over german AFs (hg37 -> hg38)
-path_ht_ger_af_hg37 = f'{nfs_dir}/data/resources/german_pop_af.ht'
-output_path = f'{nfs_dir}/data/resources/german_af_hg38'
+path_ht_ger_af_hg37 = f'{nfs_dir}/resources/german_pop_af.ht'
+output_path = f'{nfs_dir}/resources/german_af_hg38'
 
 lift_data(t=hl.read_table(path_ht_ger_af_hg37),
           gnomad=False,
@@ -43,8 +43,8 @@ lift_data(t=hl.read_table(path_ht_ger_af_hg37),
 
 
 # lift over RUMC exomes AFs (hg37 -> hg38)
-path_ht_rumc_af_hg37 = f'{nfs_dir}/data/resources/rumc_af_18032020.ht'
-output_path = f'{nfs_dir}/data/resources/rumc_af_hg38'
+path_ht_rumc_af_hg37 = f'{nfs_dir}/resources/rumc_af_18032020.ht'
+output_path = f'{nfs_dir}/resources/rumc_af_hg38'
 
 lift_data(t=hl.read_table(path_ht_rumc_af_hg37),
           gnomad=False,
@@ -55,8 +55,8 @@ lift_data(t=hl.read_table(path_ht_rumc_af_hg37),
 
 
 # lift over Bonn exomes AFs (hg37 -> hg38)
-path_ht_bonn_af_hg37 = f'{nfs_dir}/data/resources/Cohort_Bonn_AF_0521.ht'
-output_path = f'{nfs_dir}/data/resources/Cohort_Bonn_AF_0521'
+path_ht_bonn_af_hg37 = f'{nfs_dir}/resources/Cohort_Bonn_AF_0521.ht'
+output_path = f'{nfs_dir}/resources/Cohort_Bonn_AF_0521'
 
 lift_data(t=hl.read_table(path_ht_bonn_af_hg37),
           gnomad=False,
@@ -67,8 +67,8 @@ lift_data(t=hl.read_table(path_ht_bonn_af_hg37),
 
 
 # lift over denovo data (hg37 -> hg38)
-path_denovo_ht = f'{nfs_dir}/data/resources/denovo/DNM_Jin2017_Sifrim2016.ht'
-output_path = f'{nfs_dir}/data/resources/denovo/DNM_Jin2017_Sifrim2016_GRCh38'
+path_denovo_ht = f'{nfs_dir}/resources/denovo/DNM_Jin2017_Sifrim2016.ht'
+output_path = f'{nfs_dir}/resources/denovo/DNM_Jin2017_Sifrim2016_GRCh38'
 
 lift_data(t=hl.read_table(path_denovo_ht),
           gnomad=False,
