@@ -150,6 +150,30 @@ def get_chd_denovo_ht() -> hl.Table:
     return hl.read_table(f'{nfs_dir}/resources/denovo/DNM_Jin2017_Sifrim2016_GRCh38_lift.ht')
 
 
+##### variant-qc #####
+
+def get_variant_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None, split=True) -> str:
+    qc_parts = ['vep_vqsr'
+                'hard_filters',
+                'rf_result']
+
+    if part not in qc_parts:
+        raise DataException(f'Expected part one of: {qc_parts}')
+
+    split = '.split' if split else ''
+    return f'{nfs_dir}/hail_data/variant_qc/{dataset}.variant_qc.{part}{split}.ht'
+
+
+def get_vep_vqsr_vcf_path() -> str:
+    return f'{nfs_dir}/chd_ukbb_vep/recal_snp_recal_indelgenome.sorted.vcf.gz'
+
+
+def get_vep_annotation_ht() -> hl.Table:
+    return hl.read_table(
+        get_variant_qc_ht_path(part='vep')
+    )
+
+
 ##### gnomad resources #####
 
 def get_gnomad_genomes_coverage_ht() -> hl.Table:
