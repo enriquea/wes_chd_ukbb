@@ -153,7 +153,7 @@ def get_chd_denovo_ht() -> hl.Table:
 ##### variant-qc #####
 
 def get_variant_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None, split=True) -> str:
-    qc_parts = ['vep_vqsr'
+    qc_parts = ['vep_vqsr',
                 'hard_filters',
                 'rf_result']
 
