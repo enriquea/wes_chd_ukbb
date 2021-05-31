@@ -174,6 +174,18 @@ def get_vep_annotation_ht() -> hl.Table:
     )
 
 
+#### pathogenic prediction scores ####
+def get_vep_scores_ht() -> hl.Table:
+    """
+    Return HT with pathogenic prediction scores annotated with VEP (e.g. CADD)
+
+    :return: HailTable
+    """
+    return hl.read_table(
+          f'{nfs_dir}/hail_data/scores/chd_ukbb.pathogenic_scores.split.ht'
+    )
+
+
 ##### gnomad resources #####
 
 def get_gnomad_genomes_coverage_ht() -> hl.Table:
