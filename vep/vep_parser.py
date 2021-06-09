@@ -1,7 +1,3 @@
-import argparse
-import hail as hl
-import sys
-
 """
 
 Script to parse a VEP-annotated VCF file. It returns a HailTable with a selected transcript per variant/consequence
@@ -85,6 +81,13 @@ optional arguments:
 #     VQSLOD: float64,
 #     culprit: str
 # }
+
+import argparse
+import hail as hl
+import sys
+
+from utils.data_utils import (get_variant_qc_ht_path,
+                              get_vep_vqsr_vcf_path)
 
 # info fields which need to be split after apply multi-allelic split.
 INFO_FIELDS = ['AC',
@@ -289,12 +292,12 @@ def main(args):
     hl.init(default_reference=args.default_ref_genome)
 
     # Import VEPed VCF file as MatrixTable and get VCF file meta-data
-    vcf_path = args.vcf_vep_path
-    mt = hl.import_vcf(path=vcf_path,
+    # vcf_path = args.vcf_vep_path
+    mt = hl.import_vcf(path=get_vep_vqsr_vcf_path(),
                        force_bgz=args.force_bgz)
 
     # getting annotated VEP fields names from VCF-header
-    vep_fields = get_vep_fields(vcf_path=vcf_path,
+    vep_fields = get_vep_fields(vcf_path=get_vep_vqsr_vcf_path(),
                                 vep_csq_field=args.csq_field)
 
     if args.split_multi_allelic:
@@ -355,22 +358,27 @@ def main(args):
     tb_csq = (tb_csq
               .drop('csq_raw', 'tx')
               .repartition(500)
-             )
-    
+              )
 
     # print fields overview
     tb_csq.describe()
 
     # write table as HailTable to disk
-    (tb_csq
-     .write(output=args.tb_output_path,
-            overwrite=args.overwrite)
-     )
+    # (tb_csq
+    # .write(output=args.tb_output_path,
+    #        overwrite=args.overwrite)
+    # )
+
+    output_path = get_variant_qc_ht_path(part='vep_vqsr', split=args.split_multi_allelic)
+    tb_csq = (tb_csq
+              .checkpoint(output=output_path,
+                          overwrite=args.overwrite)
+              )
 
     if args.write_to_file:
         # write table to disk as a BGZ-compressed TSV file
         (tb_csq
-         .export(args.tb_output_path + '.tsv.bgz')
+         .export(f'{output_path}.tsv.bgz')
          )
 
     # Stop Hail
@@ -380,10 +388,10 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--vcf_vep_path', help='Path to VEP-annotated VCF file',
-                        type=str, default=None)
-    parser.add_argument('--tb_output_path', help='Path to output HailTable with VEP annotations parsed',
-                        type=str, default=None)
+    # parser.add_argument('--vcf_vep_path', help='Path to VEP-annotated VCF file',
+    #                    type=str, default=None)
+    # parser.add_argument('--tb_output_path', help='Path to output HailTable with VEP annotations parsed',
+    #                    type=str, default=None)
     parser.add_argument('--csq_field', help='Consequence field name in the VCF file',
                         type=str, default='CSQ')
     parser.add_argument('--force_bgz',

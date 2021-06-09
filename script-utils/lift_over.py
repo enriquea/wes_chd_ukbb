@@ -31,38 +31,50 @@ if not rg37.has_liftover("GRCh38"):
     )
 
 # lift over german AFs (hg37 -> hg38)
-path_ht_ger_af_hg37 = f'{project_dir}/data/resources/german_pop_af.ht'
-output_path = f'{project_dir}/data/resources/german_af_hg38'
+path_ht_ger_af_hg37 = f'{nfs_dir}/resources/annotation/german_pop_af.ht'
+output_path = f'{nfs_dir}/resources/annotation/german_af_hg38'
 
 lift_data(t=hl.read_table(path_ht_ger_af_hg37),
           gnomad=False,
           data_type='exomes',
           rg=rg38,
           path=output_path,
-          overwrite=False)
+          overwrite=True)
 
 
 # lift over RUMC exomes AFs (hg37 -> hg38)
-path_ht_rumc_af_hg37 = f'{project_dir}/data/resources/rumc_af_18032020.ht'
-output_path = f'{project_dir}/data/resources/rumc_af_hg38'
+path_ht_rumc_af_hg37 = f'{nfs_dir}/resources/annotation/rumc_af_18032020.ht'
+output_path = f'{nfs_dir}/resources/annotation/rumc_af_hg38'
 
 lift_data(t=hl.read_table(path_ht_rumc_af_hg37),
           gnomad=False,
           data_type='exomes',
           rg=rg38,
           path=output_path,
-          overwrite=False)
+          overwrite=True)
+
+
+# lift over Bonn exomes AFs (hg37 -> hg38)
+path_ht_bonn_af_hg37 = f'{nfs_dir}/resources/annotation/Cohort_Bonn_AF_0521.ht'
+output_path = f'{nfs_dir}/resources/annotation/Cohort_Bonn_AF_0521'
+
+lift_data(t=hl.read_table(path_ht_bonn_af_hg37),
+          gnomad=False,
+          data_type='exomes',
+          rg=rg38,
+          path=output_path,
+          overwrite=True)
 
 
 # lift over denovo data (hg37 -> hg38)
-path_denovo_ht = f'{project_dir}/data/resources/denovo/DNM_Jin2017_Sifrim2016.ht'
-output_path = f'{project_dir}/data/resources/denovo/DNM_Jin2017_Sifrim2016_GRCh38'
+path_denovo_ht = f'{nfs_dir}/resources/denovo/DNM_Jin2017_Sifrim2016.ht'
+output_path = f'{nfs_dir}/resources/denovo/DNM_Jin2017_Sifrim2016_GRCh38'
 
 lift_data(t=hl.read_table(path_denovo_ht),
           gnomad=False,
           data_type='exomes',
           rg=rg38,
           path=output_path,
-          overwrite=False)
+          overwrite=True)
 
 hl.stop()
