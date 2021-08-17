@@ -8,6 +8,7 @@ Actions:
  - Apply hard filters
  - Apply VQSR filter
  - Apply RF filter
+ - Apply coverage/capture interval filter
 
 
 usage: finalise_variant_qc.py [-h] [--exome_cohort EXOME_COHORT]
@@ -32,7 +33,10 @@ import hail as hl
 
 from utils.data_utils import (get_qc_mt_path,
                               get_variant_qc_ht_path,
-                              get_vep_annotation_ht)
+                              get_vep_annotation_ht,
+                              get_gnomad_genomes_coverage_ht)
+
+from utils.filter import (filter_capture_intervals)
 
 # from utils.constants import *
 
@@ -118,8 +122,32 @@ def main(args):
                     .default(False)
                     )
           )
+    
+    # 5. Apply coverage/capture interval filters
+    
+    ## gnomad genome coverage
+    gnomad_coverage_ht = get_gnomad_genomes_coverage_ht().key_by()
+    gnomad_coverage_ht = (gnomad_coverage_ht
+                          .annotate(locus=hl.parse_locus(gnomad_coverage_ht.locus, reference_genome='GRCh38'))
+                          .key_by('locus')
+                         )
+    ht = (ht
+         .annotate(gnomad_cov_10X=gnomad_coverage_ht[ht.locus].over_10)
+         )
+    ht = (ht
+         .annotate(is_coveraged_gnomad_genomes = ht.gnomad_cov_10X >= 0.9)
+         )
+    
+    ## defined in capture intervals
 
-    # 4. Summary final variant QC
+    # filter to capture intervals (intersect)
+    ht_defined_intervals = filter_capture_intervals(ht)
+    ht = (ht
+         .annotate(is_defined_capture_intervals = hl.is_defined(ht_defined_intervals[ht.key]))
+         )
+    
+
+    # 6. Summary final variant QC
 
     # final variant qc filter joint expression
     final_variant_qc_ann_expr = {
@@ -127,7 +155,9 @@ def main(args):
             ~ht.fail_inbreeding_coeff &
             ~ht.AC0 &
             ~ht.fail_vqsr &
-            ~ht.fail_rf,
+            ~ht.fail_rf &
+            ht.is_coveraged_gnomad_genomes &
+            ht.is_defined_capture_intervals,
             True, False)}
     ht = (ht
           .annotate(**final_variant_qc_ann_expr)
@@ -138,6 +168,8 @@ def main(args):
                     'AC0',
                     'fail_vqsr',
                     'fail_rf',
+                    'is_coveraged_gnomad_genomes',
+                    'is_defined_capture_intervals',
                     'pass_variant_qc_filters']
 
     summary_filter_expr = {v: hl.struct(**{f: hl.agg.filter(ht.variant_type == v, hl.agg.counter(ht[f]))

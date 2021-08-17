@@ -162,7 +162,8 @@ def annotate_from_array(ht: hl.Table,
 
 # select one a transcript from array using pre-defined rules/conditions.
 def pick_transcript(ht: hl.Table,
-                    csq_array: str) -> hl.Table:
+                    csq_array: str,
+                    pick_protein_coding: bool = True) -> hl.Table:
     # TODO: This function could be improved by scanning the array (just once) and sorting it as suggested here:
     # TODO: https://hail.zulipchat.com/#narrow/stream/123010-Hail-0.2E2.20support/topic/pick.20transcript.20from.20array
     # TODO: /near/190400193
@@ -172,20 +173,30 @@ def pick_transcript(ht: hl.Table,
     This function will pick one transcript per variant/consequence based on the impact of the variant in the transcript
     (from more severe to less severe).
 
+    :param pick_protein_coding: keep only protein-coding transcripts
     :param ht: Hail table with VEP annotations
     :param csq_array: Parsed CSQ field name. Expected to be an array of dict(s). Transcript expected to be as a dict.
     :return: Hail table with an annotated extra field (tx). The transcript selected from the array based on a set of
     pre-defined criteria.
     """
 
+    # getting current keys from dict
+    keys = ht[csq_array].take(1)[0][0]
+
+    # filter to protein-coding consequences
+    if pick_protein_coding and 'BIOTYPE' in keys:
+        ht = (ht
+              .annotate(**{csq_array:
+                             ht[csq_array].filter(lambda x: x['BIOTYPE'] == 'protein_coding')
+                           }
+                       )
+              )
+
     # Set transcript (tx) field initially to 'NA' and update it sequentially based on a set of pre-defined criteria
     # (order matters)
     ht = (ht
           .annotate(tx=ht[csq_array].find(lambda x: False))
           )
-
-    # getting current keys from dict
-    keys = ht[csq_array].take(1)[0][0]
 
     # select tx if LoF == 'HC'
     if 'LoF' in keys:
@@ -231,7 +242,7 @@ def pick_transcript(ht: hl.Table,
 
     # if tx is still missing, set tx as the first annotated transcript
     ht = (ht
-          .annotate(tx=hl.cond(hl.is_missing(ht.tx),
+          .annotate(tx=hl.cond(hl.is_missing(ht.tx) & (hl.len(ht[csq_array]) > 0),
                                ht[csq_array][0],
                                ht.tx)
                     )
