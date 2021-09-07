@@ -58,11 +58,14 @@ University of Nottingham (UK); controls were sequenced as part of the UK Biobank
 
 
 ### Util scripts
-*VEP parser*: Parse a VCF file annotated with the Variant Effect Predictor (VEP) tool.
-*dbNSFP parser*: Generate a HailTable from the dbNSFP (version 4.1a) for annotations and downstream analysis.
+*VEP parser*: Parse a VCF file annotated with the Variant Effect Predictor (VEP) tool
+ (`vep/vep_parser.py`)
+
+*dbNSFP parser*: Generate a HailTable from the dbNSFP (version 4.1a) for annotations and downstream analysis
+ (`script-utils/parse_dbnsfp_variants.py`)
 
 
-#### References
+### References
 [1] Karczewski, KJ et al. The mutational constraint spectrum quantified from variation in 141,456 humans.
     Nature 581, 434–443 (2020).
          
