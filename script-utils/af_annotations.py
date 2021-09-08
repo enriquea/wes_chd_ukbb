@@ -68,7 +68,7 @@ variant_ht = (variant_ht
 
 af_fields = list(af_ann_expr.keys())
 variant_ht = (variant_ht
-              .select(af_fields)
+              .select(*af_fields)
               )
 
 
@@ -82,7 +82,16 @@ variant_ht = (variant_ht
 
 
 ## export af table
-variant_ht.write(
-    f'{nfs_dir}/hail_data/hts/chd_ukbb.variants.af.annotations.external.{date}.ht'
+
+# write to Hail table
+output_path_ht = f'{nfs_dir}/hail_data/hts/chd_ukbb.variants.af.annotations.external.{date}.ht'
+variant_ht = (variant_ht
+              .checkpoint(output_path_ht, overwrite=True)
+             )
+
+# write to TSV file    
+(variant_ht
+  .export(f'{output_path_ht}.tsv.bgz')
 )
+
 
