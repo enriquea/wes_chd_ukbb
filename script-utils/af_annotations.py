@@ -45,10 +45,21 @@ af_ann_expr = {
     'ger_af': ht_ger_af[variant_ht.key].GERPOP_AF,
     'rumc_af': ht_rumc_af[variant_ht.key].RUMC_AF,
     'bonn_af': bonn_af[variant_ht.key].AF,
-    'gnomad_genomes_af': gnomad_af_ht[variant_ht.key].AF,
-    'gnomad_exomes_af': hl.parse_float(variant_ht.vep.gnomAD_AF),
-    'gnomad_exomes_ac': hl.parse_int(variant_ht.vep.gnomAD_AC)  # NOTE: AF/AC gnomad fields are already VEP-annotated
+    'gnomad_genomes_af': gnomad_af_ht[variant_ht.key].AF
 }
+
+# NOTE: AF gnomad exome fields are already VEP-annotated
+gnomad_exomes_af_fields = ['gnomAD_AF',
+                           'gnomAD_SAS_AF',
+                           'gnomAD_OTH_AF',
+                           'gnomAD_NFE_AF',
+                           'gnomAD_FIN_AF']
+
+gnomad_exomes_af_expr = {f: hl.parse_float(variant_ht.vep[f]) for f in gnomad_exomes_af_fields}
+
+# add gnomad exomes AF expression to annotation dict
+af_ann_expr.update(gnomad_exomes_af_expr)
+
 
 ## annotate afs
 variant_ht = (variant_ht
@@ -60,6 +71,7 @@ variant_ht = (variant_ht
               .select(af_fields)
               )
 
+
 ## add global annotation
 date = current_date()
 global_ann_expr = {'date': date,
@@ -67,6 +79,7 @@ global_ann_expr = {'date': date,
 variant_ht = (variant_ht
               .annotate_globals(**global_ann_expr)
               )
+
 
 ## export af table
 variant_ht.write(
