@@ -11,8 +11,8 @@ def compute_fisher_exact(tb: hl.Table,
                          total_cases_col: str,
                          total_controls_col: str,
                          correct_total_counts: bool,
-                         root_col_name: str,
-                         extra_fields: dict) -> hl.Table:
+                         extra_fields: dict,
+                         root_col_name: str = 'fet') -> hl.Table:
     """
     Perform two-sided Fisher Exact test. Add extra annotations (if any)
 
