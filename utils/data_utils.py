@@ -261,5 +261,17 @@ def get_rum_af_ht() -> hl.Table:
     )
 
 
+def get_af_annotation_ht() -> hl.Table:
+    """
+    CHD/UKBB variants (multi-allelic split) HT with annotated allelic frequencies
+    from external sources (e.g. gnomad exomes and genomes). Genome build hg38.
+
+    :return: HailTable
+    """
+    return hl.read_table(
+        f'{nfs_dir}/hail_data/hts/chd_ukbb.variants.af.annotations.external.08092021.ht'
+    )
+
+
 class DataException(Exception):
     pass
