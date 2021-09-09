@@ -262,11 +262,18 @@ def vep_protein_domain_ann_expr(s: hl.expr.StringExpression) -> hl.expr.DictExpr
     :param s: hl.expr.StringExpression
     :return: hl.expr.DictExpression
     """
-    a = s.split(delim='&')
-    a_sources = a.map(lambda x: x.split(delim=":", n=2)[0])  # TODO: Optimize by scanning array just one.
-    a_domains = a.map(lambda x: x.split(delim=":", n=2)[1])
+    a1 = s.split(delim="&")
 
-    d = hl.dict(hl.zip(a_sources, a_domains))
+    # keep only well-annotated domain(s) (i.e. <source:domain_id>)
+    a2 = a1.map(lambda x: x.split(delim=":"))
+    a2 = a2.filter(lambda x: x.length() == 2)
+
+    d = (hl.case()
+         .when(hl.len(a2) > 0,
+               hl.dict(hl.zip(a2.map(lambda x: x[0]),  # TODO: Optimize by scanning array just one.
+                              a2.map(lambda x: x[1]))))
+         .or_missing()
+         )
 
     return d
 
