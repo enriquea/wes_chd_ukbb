@@ -163,7 +163,8 @@ def annotate_from_array(ht: hl.Table,
 # select one a transcript from array using pre-defined rules/conditions.
 def pick_transcript(ht: hl.Table,
                     csq_array: str,
-                    pick_protein_coding: bool = True) -> hl.Table:
+                    pick_protein_coding: bool = True,
+                    pick_canonical: bool = True) -> hl.Table:
     # TODO: This function could be improved by scanning the array (just once) and sorting it as suggested here:
     # TODO: https://hail.zulipchat.com/#narrow/stream/123010-Hail-0.2E2.20support/topic/pick.20transcript.20from.20array
     # TODO: /near/190400193
@@ -173,7 +174,8 @@ def pick_transcript(ht: hl.Table,
     This function will pick one transcript per variant/consequence based on the impact of the variant in the transcript
     (from more severe to less severe).
 
-    :param pick_protein_coding: keep only protein-coding transcripts
+    :param pick_canonical: keep only canonical transcript(s)
+    :param pick_protein_coding: keep only protein-coding transcript(s)
     :param ht: Hail table with VEP annotations
     :param csq_array: Parsed CSQ field name. Expected to be an array of dict(s). Transcript expected to be as a dict.
     :return: Hail table with an annotated extra field (tx). The transcript selected from the array based on a set of
@@ -183,13 +185,22 @@ def pick_transcript(ht: hl.Table,
     # getting current keys from dict
     keys = ht[csq_array].take(1)[0][0]
 
-    # filter to protein-coding consequences
+    # filter to protein-coding transcript(s)
     if pick_protein_coding and 'BIOTYPE' in keys:
         ht = (ht
               .annotate(**{csq_array:
-                             ht[csq_array].filter(lambda x: x['BIOTYPE'] == 'protein_coding')
+                               ht[csq_array].filter(lambda x: x['BIOTYPE'] == 'protein_coding')
                            }
-                       )
+                        )
+              )
+
+    # filter to canonical transcript(s)
+    if pick_canonical and 'CANONICAL' in keys:
+        ht = (ht
+              .annotate(**{csq_array:
+                               ht[csq_array].filter(lambda x: x['CANONICAL'] == 'YES')
+                           }
+                        )
               )
 
     # Set transcript (tx) field initially to 'NA' and update it sequentially based on a set of pre-defined criteria
@@ -232,14 +243,6 @@ def pick_transcript(ht: hl.Table,
                         )
               )
 
-    # select tx if CANONICAL
-    ht = (ht
-          .annotate(tx=hl.cond(hl.is_missing(ht.tx),
-                               ht[csq_array].find(lambda x: x['CANONICAL'] == 'YES'),
-                               ht.tx)
-                    )
-          )
-
     # if tx is still missing, set tx as the first annotated transcript
     ht = (ht
           .annotate(tx=hl.cond(hl.is_missing(ht.tx) & (hl.len(ht[csq_array]) > 0),
@@ -248,6 +251,24 @@ def pick_transcript(ht: hl.Table,
                     )
           )
     return ht
+
+
+def vep_protein_domain_ann_expr(s: hl.expr.StringExpression) -> hl.expr.DictExpression:
+    """
+    Parse and annotate protein domain(s) from VEP annotation.
+    Expected StringExpression as input (e.g. 'Pfam:PF13853&Prints:PR00237&PROSITE_profiles:PS50262')
+    It will generate a dict<k,v> where keys (k) represent source/database and values (v) the annotated domain_id.
+
+    :param s: hl.expr.StringExpression
+    :return: hl.expr.DictExpression
+    """
+    a = s.split(delim='&')
+    a_sources = a.map(lambda x: x.split(delim=":", n=2)[0])  # TODO: Optimize by scanning array just one.
+    a_domains = a.map(lambda x: x.split(delim=":", n=2)[1])
+
+    d = hl.dict(hl.zip(a_sources, a_domains))
+
+    return d
 
 
 def annotate_from_dict(ht: hl.Table,
@@ -364,6 +385,12 @@ def main(args):
     tb_csq = (tb_csq
               .annotate(vep=tb_csq.vep.annotate(Consequence=tb_csq.vep.Consequence.split('&')[0]))
               )
+
+    # Parse the protein DOMAIN field
+    if 'DOMAINS' in vep_fields:
+        tb_csq = (tb_csq
+                  .annotate(vep=tb_csq.vep.annotate(DOMAINS=vep_protein_domain_ann_expr(tb_csq.vep['DOMAINS'])))
+                  )
 
     # drop redundant/temp fields
     tb_csq = (tb_csq
