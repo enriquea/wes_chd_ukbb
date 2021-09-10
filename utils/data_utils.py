@@ -1,5 +1,6 @@
 """
-Set of function to retrieve paths from jointly called data as MatrixTable / HailTable
+Set of functions to handle import/export of sample metadata, MT, intervals and resources.
+
 """
 
 import hail as hl
@@ -8,6 +9,8 @@ nfs_dir = 'file:///home/ubuntu/data'
 hdfs_dir = 'hdfs://spark-master:9820/dir/hail_data'
 hdfs_checkpoint_dir = 'hdfs://spark-master:9820/checkpoint'
 
+
+##### MatrixTable utils #####
 
 def get_mt_data(dataset: str = 'chd_ukbb', part: str = None, split: bool = True) -> hl.MatrixTable:
     """
@@ -22,13 +25,17 @@ def get_mt_data(dataset: str = 'chd_ukbb', part: str = None, split: bool = True)
 
     """
     # TODO: add different MT versions here...
+    parts = ['raw', 'raw_chr20', 'filtered_high_callrate']
+
     if part == 'raw':
         split = '.split' if split else ''
+        return hl.read_matrix_table(f'{nfs_dir}/hail_data/mts/{dataset}.{part}{split}.mt')
+    elif part == 'raw_chr20':
         return hl.read_matrix_table(f'{nfs_dir}/hail_data/mts/{dataset}.{part}{split}.mt')
     elif part == 'filtered_high_callrate':
         return hl.read_matrix_table(f'{nfs_dir}/hail_data/mts/{dataset}.high_callrate.common_snp.biallelic.mt')
     else:
-        raise DataException("Select one valid version of the dataset: unfiltered or filtered_high_callrate...")
+        raise DataException(f"Select one valid version of the dataset: {parts}...")
 
 
 def get_qc_mt_path(dataset: str = 'chd_ukbb', part: str = None, split=True, ld_pruned=False) -> str:
@@ -46,6 +53,22 @@ def get_qc_mt_path(dataset: str = 'chd_ukbb', part: str = None, split=True, ld_p
     ld_pruned = '.ld_pruned' if ld_pruned else ''
     return f'{nfs_dir}/hail_data/mt_qc/{dataset}.qc.{part}{split}{ld_pruned}.mt'
 
+
+def get_mt_checkpoint_path(dataset: str = 'dataset', part: str = '') -> str:
+    return f'{hdfs_checkpoint_dir}/{dataset}.{part}.checkpoint.mt'
+
+
+def get_1kg_mt(reference: str = 'GRCh38') -> hl.MatrixTable:
+    """
+    Return MT 1K genome phase 3 dataset.
+
+    :param reference: genome reference. One of GRCh37 and GRCh38.
+    :return: MatrixTable
+    """
+    return hl.read_matrix_table(f'{nfs_dir}/resources/1kgenome/phase3_1kg.snp_biallelic.{reference}.mt')
+
+
+##### Intervals utils #####
 
 def get_capture_interval_ht(name: str, reference: str) -> hl.Table:
     """
@@ -69,19 +92,17 @@ def get_capture_interval_ht(name: str, reference: str) -> hl.Table:
     return hl.read_table(f'{nfs_dir}/resources/intervals/{name}.intervals.{reference}.ht')
 
 
-def get_1kg_mt(reference: str = 'GRCh38') -> hl.MatrixTable:
+def get_chd_denovo_ht() -> hl.Table:
     """
-    Return MT 1K genome phase 3 dataset.
+    Return a list of de novo mutations called from CHD trios.
+    Curated from two studies, Jin 2017 and Sifrim-Hitz 2016.
 
-    :param reference: genome reference. One of GRCh37 and GRCh38.
-    :return: MatrixTable
+    :return: Hail Table
     """
-    return hl.read_matrix_table(f'{nfs_dir}/resources/1kgenome/phase3_1kg.snp_biallelic.{reference}.mt')
+    return hl.read_table(f'{nfs_dir}/resources/denovo/DNM_Jin2017_Sifrim2016_GRCh38_lift.ht')
 
 
-def get_mt_checkpoint_path(dataset: str = 'dataset', part: str = '') -> str:
-    return f'{hdfs_checkpoint_dir}/{dataset}.{part}.checkpoint.mt'
-
+##### sample-metadata annotations #####
 
 def get_sample_meta_data() -> hl.Table:
     """
@@ -114,16 +135,6 @@ def import_fam_ht() -> hl.Table:
     return hl.import_fam(
         get_fam_path()
     )
-
-
-def get_chd_denovo_ht() -> hl.Table:
-    """
-    Return a list of de novo mutations called from CHD trios.
-    Curated from two studies, Jin 2017 and Sifrim-Hitz 2016.
-
-    :return: Hail Table
-    """
-    return hl.read_table(f'{nfs_dir}/resources/denovo/DNM_Jin2017_Sifrim2016_GRCh38_lift.ht')
 
 
 ##### sample-qc #####
@@ -180,6 +191,7 @@ def get_vep_annotation_ht() -> hl.Table:
 
 
 #### pathogenic prediction scores ####
+
 def get_vep_scores_ht() -> hl.Table:
     """
     Return HT with pathogenic prediction scores annotated with VEP (e.g. CADD)
@@ -187,7 +199,7 @@ def get_vep_scores_ht() -> hl.Table:
     :return: HailTable
     """
     return hl.read_table(
-          f'{nfs_dir}/hail_data/scores/chd_ukbb.pathogenic_scores.split.ht'
+        f'{nfs_dir}/hail_data/scores/chd_ukbb.pathogenic_scores.vep.split.ht'
     )
 
 
@@ -227,6 +239,7 @@ def get_gnomad_genomes_v3_af_ht() -> hl.Table:
 
 
 ##### af annotation tables #####
+
 def get_bonn_af_ht() -> hl.Table:
     """
     In-hause german allelic frequencies from Bonn (May 2021)
