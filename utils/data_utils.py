@@ -31,7 +31,7 @@ def get_mt_data(dataset: str = 'chd_ukbb', part: str = None, split: bool = True)
         raise DataException("Select one valid version of the dataset: unfiltered or filtered_high_callrate...")
 
 
-def get_qc_mt_path(dataset: str = 'chd_ukbb', part: str = None, split=False, ld_pruned=False) -> str:
+def get_qc_mt_path(dataset: str = 'chd_ukbb', part: str = None, split=True, ld_pruned=False) -> str:
     """
     Generate path to MT where the results of a QC process should be read/written from/to.
 
@@ -45,21 +45,6 @@ def get_qc_mt_path(dataset: str = 'chd_ukbb', part: str = None, split=False, ld_
     split = '.split' if split else ''
     ld_pruned = '.ld_pruned' if ld_pruned else ''
     return f'{nfs_dir}/hail_data/mt_qc/{dataset}.qc.{part}{split}{ld_pruned}.mt'
-
-
-def get_sample_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None) -> str:
-    qc_parts = ['sex_chrom_coverage',
-                'hard_filters',
-                'joint_pca_1kg',
-                'platform_pca',
-                'population_qc',
-                'high_conf_autosomes',
-                'stratified_metrics_filter']
-
-    if part not in qc_parts:
-        raise DataException(f'Expected part one of: {qc_parts}')
-
-    return f'{nfs_dir}/hail_data/sample_qc/{dataset}.sample_qc.{part}.ht'
 
 
 def get_capture_interval_ht(name: str, reference: str) -> hl.Table:
@@ -131,6 +116,18 @@ def import_fam_ht() -> hl.Table:
     )
 
 
+def get_chd_denovo_ht() -> hl.Table:
+    """
+    Return a list of de novo mutations called from CHD trios.
+    Curated from two studies, Jin 2017 and Sifrim-Hitz 2016.
+
+    :return: Hail Table
+    """
+    return hl.read_table(f'{nfs_dir}/resources/denovo/DNM_Jin2017_Sifrim2016_GRCh38_lift.ht')
+
+
+##### sample-qc #####
+
 def get_sample_pop_qc() -> hl.Table:
     return hl.import_table(
         f"{nfs_dir}/projects/wes_chd_ukbb/data/annotation/samples/chd_ukbb_population_predicted_pca_rf_09102020.txt",
@@ -141,14 +138,20 @@ def get_sample_pop_qc() -> hl.Table:
     ).key_by('s')
 
 
-def get_chd_denovo_ht() -> hl.Table:
-    """
-    Return a list of de novo mutations called from CHD trios.
-    Curated from two studies, Jin 2017 and Sifrim-Hitz 2016.
+def get_sample_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None) -> str:
+    qc_parts = ['sex_chrom_coverage',
+                'hard_filters',
+                'joint_pca_1kg',
+                'platform_pca',
+                'population_qc',
+                'high_conf_autosomes',
+                'stratified_metrics_filter',
+                'final_qc']
 
-    :return: Hail Table
-    """
-    return hl.read_table(f'{nfs_dir}/resources/denovo/DNM_Jin2017_Sifrim2016_GRCh38_lift.ht')
+    if part not in qc_parts:
+        raise DataException(f'Expected part one of: {qc_parts}')
+
+    return f'{nfs_dir}/hail_data/sample_qc/{dataset}.sample_qc.{part}.ht'
 
 
 ##### variant-qc #####
