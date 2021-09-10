@@ -223,5 +223,55 @@ def get_gnomad_genomes_v3_af_ht() -> hl.Table:
     )
 
 
+##### af annotation tables #####
+def get_bonn_af_ht() -> hl.Table:
+    """
+    In-hause german allelic frequencies from Bonn (May 2021)
+    Liftover from hg37 -> hg38
+
+    :return: HailTable
+    """
+    return hl.read_table(
+        f'{nfs_dir}/resources/annotation/Cohort_Bonn_AF_0521_lift.ht',
+    )
+
+
+def get_germ_af_ht() -> hl.Table:
+    """
+    In-hause german allelic frequencies from Tuebingen
+    Liftover from hg37 -> hg38
+
+    :return: HailTable
+    """
+    return hl.read_table(
+        f'{nfs_dir}/resources/annotation/german_af_hg38_lift.ht',
+    )
+
+
+def get_rum_af_ht() -> hl.Table:
+    """
+    Allelic frequencies from RUMC (Dutch) cohort.
+    Liftover from hg37 -> hg38
+    DOI: 10.1038/s41586-020-2832-5
+
+    :return: HailTable
+    """
+    return hl.read_table(
+        f'{nfs_dir}/resources/annotation/rumc_af_hg38_lift.ht',
+    )
+
+
+def get_af_annotation_ht() -> hl.Table:
+    """
+    CHD/UKBB variants (multi-allelic split) HT with annotated allelic frequencies
+    from external sources (e.g. gnomad exomes and genomes). Genome build hg38.
+
+    :return: HailTable
+    """
+    return hl.read_table(
+        f'{nfs_dir}/hail_data/hts/chd_ukbb.variants.af.annotations.external.08092021.ht'
+    )
+
+
 class DataException(Exception):
     pass
