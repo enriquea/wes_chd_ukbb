@@ -26,9 +26,9 @@ def get_mt_data(dataset: str = 'chd_ukbb', part: str = None, split: bool = True)
     """
     # TODO: add different MT versions here...
     parts = ['raw', 'raw_chr20', 'filtered_high_callrate']
+    split = '.split' if split else ''
 
     if part == 'raw':
-        split = '.split' if split else ''
         return hl.read_matrix_table(f'{nfs_dir}/hail_data/mts/{dataset}.{part}{split}.mt')
     elif part == 'raw_chr20':
         return hl.read_matrix_table(f'{nfs_dir}/hail_data/mts/{dataset}.{part}{split}.mt')
@@ -200,7 +200,7 @@ def get_vep_scores_ht() -> hl.Table:
     """
     return hl.read_table(
         f'{nfs_dir}/hail_data/scores/chd_ukbb.pathogenic_scores.vep.split.ht'
-    )
+    ).key_by('locus', 'alleles')
 
 
 ##### gnomad resources #####
