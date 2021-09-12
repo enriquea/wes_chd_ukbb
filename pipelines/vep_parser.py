@@ -89,6 +89,10 @@ import sys
 from utils.data_utils import (get_variant_qc_ht_path,
                               get_vep_vqsr_vcf_path)
 
+from utils.vep import (get_vep_fields,
+                       pick_transcript,
+                       vep_protein_domain_ann_expr)
+
 # info fields which need to be split after apply multi-allelic split.
 INFO_FIELDS = ['AC',
                'AF',
@@ -103,35 +107,6 @@ INFO_FIELDS = ['AC',
                'MLEAC',
                'MLEAF',
                'RAW_MQandDP']
-
-
-# Define useful parser functions
-def get_vep_fields(vcf_path: str,
-                   vep_csq_field: str) -> list:
-    """
-    Parse VCF meta information (header) and extract
-    annotated VEP field names.
-
-    :param vep_csq_field: VEP consequence field name
-    :param vcf_path: Path to VEP annotated VCF file
-    :return: List of annotated fields with VEP
-    """
-
-    # Extract VCF meta-info
-    meta_info = hl.get_vcf_metadata(vcf_path)
-
-    # parse names in CSQ field
-    csq = (meta_info
-           .get('info')
-           .get(vep_csq_field))
-    fields = (csq
-              .get('Description')
-              .split('Format:')[1]
-              .strip()
-              .split('|')
-              )
-
-    return fields
 
 
 def annotate_from_array(ht: hl.Table,
@@ -160,124 +135,6 @@ def annotate_from_array(ht: hl.Table,
     return tb_expanded
 
 
-# select one a transcript from array using pre-defined rules/conditions.
-def pick_transcript(ht: hl.Table,
-                    csq_array: str,
-                    pick_protein_coding: bool = True,
-                    pick_canonical: bool = True) -> hl.Table:
-    # TODO: This function could be improved by scanning the array (just once) and sorting it as suggested here:
-    # TODO: https://hail.zulipchat.com/#narrow/stream/123010-Hail-0.2E2.20support/topic/pick.20transcript.20from.20array
-    # TODO: /near/190400193
-
-    """
-    Annotate an extra field (tx) with the selected transcript.
-    This function will pick one transcript per variant/consequence based on the impact of the variant in the transcript
-    (from more severe to less severe).
-
-    :param pick_canonical: keep only canonical transcript(s)
-    :param pick_protein_coding: keep only protein-coding transcript(s)
-    :param ht: Hail table with VEP annotations
-    :param csq_array: Parsed CSQ field name. Expected to be an array of dict(s). Transcript expected to be as a dict.
-    :return: Hail table with an annotated extra field (tx). The transcript selected from the array based on a set of
-    pre-defined criteria.
-    """
-
-    # getting current keys from dict
-    keys = ht[csq_array].take(1)[0][0]
-
-    # filter to protein-coding transcript(s)
-    if pick_protein_coding and 'BIOTYPE' in keys:
-        ht = (ht
-              .annotate(**{csq_array:
-                               ht[csq_array].filter(lambda x: x['BIOTYPE'] == 'protein_coding')
-                           }
-                        )
-              )
-
-    # filter to canonical transcript(s)
-    if pick_canonical and 'CANONICAL' in keys:
-        ht = (ht
-              .annotate(**{csq_array:
-                               ht[csq_array].filter(lambda x: x['CANONICAL'] == 'YES')
-                           }
-                        )
-              )
-
-    # Set transcript (tx) field initially to 'NA' and update it sequentially based on a set of pre-defined criteria
-    # (order matters)
-    ht = (ht
-          .annotate(tx=ht[csq_array].find(lambda x: False))
-          )
-
-    # select tx if LoF == 'HC'
-    if 'LoF' in keys:
-        ht = (ht
-              .annotate(tx=hl.cond(hl.is_missing(ht.tx),
-                                   ht[csq_array].find(lambda x:
-                                                      x['LoF'] == 'HC'),
-                                   ht.tx)
-                        )
-              )
-
-    # select transcript based on the consequence impact (high -> moderate -> low)
-    if 'IMPACT' in keys:
-        # select tx if IMPACT == HIGH
-        ht = (ht
-              .annotate(tx=hl.cond(hl.is_missing(ht.tx),
-                                   ht[csq_array].find(lambda x: x['IMPACT'] == 'HIGH'),
-                                   ht.tx)
-                        )
-              )
-        # select tx if IMPACT == MODERATE
-        ht = (ht
-              .annotate(tx=hl.cond(hl.is_missing(ht.tx),
-                                   ht[csq_array].find(lambda x: x['IMPACT'] == 'MODERATE'),
-                                   ht.tx)
-                        )
-              )
-        # select tx if IMPACT == LOW
-        ht = (ht
-              .annotate(tx=hl.cond(hl.is_missing(ht.tx),
-                                   ht[csq_array].find(lambda x: x['IMPACT'] == 'LOW'),
-                                   ht.tx)
-                        )
-              )
-
-    # if tx is still missing, set tx as the first annotated transcript
-    ht = (ht
-          .annotate(tx=hl.cond(hl.is_missing(ht.tx) & (hl.len(ht[csq_array]) > 0),
-                               ht[csq_array][0],
-                               ht.tx)
-                    )
-          )
-    return ht
-
-
-def vep_protein_domain_ann_expr(s: hl.expr.StringExpression) -> hl.expr.DictExpression:
-    """
-    Parse and annotate protein domain(s) from VEP annotation.
-    Expected StringExpression as input (e.g. 'Pfam:PF13853&Prints:PR00237&PROSITE_profiles:PS50262')
-    It will generate a dict<k,v> where keys (k) represent source/database and values (v) the annotated domain_id.
-
-    :param s: hl.expr.StringExpression
-    :return: hl.expr.DictExpression
-    """
-    a1 = s.split(delim="&")
-
-    # keep only well-annotated domain(s) (i.e. <source:domain_id>)
-    a2 = a1.map(lambda x: x.split(delim=":"))
-    a2 = a2.filter(lambda x: x.length() == 2)
-
-    d = (hl.case()
-         .when(hl.len(a2) > 0,
-               hl.dict(hl.zip(a2.map(lambda x: x[0]),  # TODO: Optimize by scanning array just one.
-                              a2.map(lambda x: x[1]))))
-         .or_missing()
-         )
-
-    return d
-
-
 def annotate_from_dict(ht: hl.Table,
                        dict_field: str,
                        output_filed: str) -> hl.Table:
@@ -303,27 +160,6 @@ def annotate_from_dict(ht: hl.Table,
 
     return ht
 
-
-def filter_biallelic(mt: hl.MatrixTable) -> hl.MatrixTable:
-    """
-    Remove multi-allelic variant. Keep bi-allelic only.
-
-    :param mt: Hail MatrixTable
-    :return: Filtered MatrixTable
-    """
-    n_total = mt.count_rows()
-    mt = (mt
-          .filter_rows(hl.len(mt.alleles) == 2,
-                       keep=True)
-
-          )
-    n_filtered = n_total - mt.count_rows()
-
-    pct = (n_filtered / n_total) * 100
-
-    print(f'Filtered {n_filtered} ({round(pct, 2)}%) multi-allelic variants out of {n_total}.')
-
-    return mt
 
 
 def main(args):

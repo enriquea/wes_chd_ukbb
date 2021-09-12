@@ -54,12 +54,13 @@ University of Nottingham (UK); controls were sequenced as part of the UK Biobank
 
                
 ### Burden testing
-[Gene- and gene et-based burden testing description here]
+*Gene burden test*: Run gene-based case-control burden test (Fisher Exact) stratified by variant functional category 
+and proband syndromic status. (`pipelines/gene_burden_fet.py`)
 
 
 ### Util scripts
 *VEP parser*: Parse a VCF file annotated with the Variant Effect Predictor (VEP) tool
- (`vep/vep_parser.py`)
+ (`pipelines/vep_parser.py`)
 
 *dbNSFP parser*: Generate a HailTable from the dbNSFP (version 4.1a) for annotations and downstream analysis
  (`script-utils/parse_dbnsfp_variants.py`)
