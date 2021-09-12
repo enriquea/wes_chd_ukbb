@@ -10,10 +10,10 @@ Utils functions to parse and process VEP annotations
 import hail as hl
 
 # Main pre-defined protein domain source of annotations
-PROTEIN_DOMAIN_DB = ('CDD',
+PROTEIN_DOMAIN_DB = ['CDD',
                      'Pfam',
                      'SMART',
-                     'PANTHER')
+                     'PANTHER']
 
 
 # Define useful parser functions
