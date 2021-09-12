@@ -16,7 +16,6 @@ import uuid
 
 import hail as hl
 
-from utils.constants import *
 from utils.data_utils import (get_af_annotation_ht,
                               get_sample_meta_data,
                               get_qc_mt_path,
@@ -32,13 +31,13 @@ from utils.filter import (filter_low_conf_regions,
                           remove_telomeres_centromes
                           )
 
+from utils.generic import current_date
+from utils.stats import compute_fisher_exact
 from utils.expressions import (af_filter_expr,
                                bi_allelic_expr)
 
-from utils.generic import current_date
+from utils.vep import vep_protein_domain_filter_expr
 
-from utils.intervals import get_ssv5_idt_intervals_intersect_ht
-from utils.stats import compute_fisher_exact
 
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger("Burden testing pipeline")
@@ -223,19 +222,28 @@ def main(args):
             f'{hdfs_dir}/chd_ukbb.qc_final.rare.mt'
         )
 
-    ## filter to bi-allelic
-    # mt = mt.filter_rows(bi_allelic_expr(mt))
-
     ## Add VEP-annotated fields
     vep_ht = get_vep_annotation_ht()
 
     mt = (mt
           .annotate_rows(LoF=vep_ht[mt.row_key].vep.LoF,
                          Consequence=vep_ht[mt.row_key].vep.Consequence,
+                         DOMAINS=vep_ht[mt.row_key].vep.DOMAINS,
                          SYMBOL=vep_ht[mt.row_key].vep.SYMBOL)
           )
 
-    # add cases/controls sample annotations
+    if args.filter_biallelic:
+        ## filter to bi-allelic
+        logger.info('Running burden test on biallelic variants...')
+        mt = mt.filter_rows(bi_allelic_expr(mt))
+
+    if args.filter_protein_domain:
+        mt = mt.filter_rows(
+            vep_protein_domain_filter_expr(mt.DOMAINS),
+            keep=True
+        )
+
+    ## Add cases/controls sample annotations
     tb_sample = get_sample_meta_data()
     mt = (mt
           .annotate_cols(**tb_sample[mt.s])
@@ -245,20 +253,17 @@ def main(args):
           .filter_cols(mt['phe.is_case'] | mt['phe.is_control'])
           )
 
-    # print remaining samples/variants
-    # mt.describe()
-
-    ## annotate pathogenic scores
+    ## Annotate pathogenic scores
     ht_scores = get_vep_scores_ht()
     mt = mt.annotate_rows(**ht_scores[mt.row_key])
 
-    ## classify variant into (major) consequence groups
+    ## Classify variant into (major) consequence groups
     score_expr_ann = {'hcLOF': mt.LoF == 'HC',
                       'syn': mt.Consequence == 'synonymous_variant',
                       'miss': mt.Consequence == 'missense_variant'
                       }
 
-    # update dict expr annotations with combinations of variant consequences categories
+    # Update dict expr annotations with combinations of variant consequences categories
     score_expr_ann.update(
         {'missC': (hl.sum([(mt['vep.MVP_score'] >= MVP_THRESHOLD),
                            (mt['vep.REVEL_score'] >= REVEL_THRESHOLD),
@@ -301,7 +306,7 @@ def main(args):
                   .persist()
                   )
 
-    # generate table of counts
+    # Generate table of counts
     tb_gene = (
         mt_grouped
             .annotate_rows(
@@ -392,6 +397,10 @@ if __name__ == '__main__':
                         action='store_true')
     parser.add_argument('--af_max_threshold', help='Allelic frequency cutoff to filter variant (max)',
                         type=float, default=0.001)
+    parser.add_argument('--filter_biallelic', help='Run burden test on bi-allelic variants only',
+                        action='store_true')
+    parser.add_argument('--filter_protein_domain', help='Run burden test on variants within protein domain(s) only',
+                        action='store_true')
     parser.add_argument('--write_to_file', help='Write output to BGZ-compressed file',
                         action='store_true')
     parser.add_argument('--overwrite', help='Overwrite pre-existing data',
