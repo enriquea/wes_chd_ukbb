@@ -6,6 +6,40 @@
 Run case-control burden test (Fisher Exact) stratified by variant functional category and proband
 syndromic status.
 
+usage: gene_burden_fet.py [-h] [-i EXOME_COHORT] [-o OUTPUT_DIR]
+                          [--skip_sample_qc_filtering]
+                          [--skip_variant_qc_filtering] [--skip_af_filtering]
+                          [--af_max_threshold AF_MAX_THRESHOLD]
+                          [--filter_biallelic] [--filter_protein_domain]
+                          [--write_to_file] [--overwrite]
+                          [--default_ref_genome DEFAULT_REF_GENOME]
+                          [--run_test_mode]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -i EXOME_COHORT, --exome_cohort EXOME_COHORT
+                        One of <chd_ukbb> or <chd_ddd>
+  -o OUTPUT_DIR, --output_dir OUTPUT_DIR
+                        Path to output directory
+  --skip_sample_qc_filtering
+                        Skip the sample QC filtering step
+  --skip_variant_qc_filtering
+                        Skip the variant QC filtering step
+  --skip_af_filtering   Skip the allelic frequency filtering step
+  --af_max_threshold AF_MAX_THRESHOLD
+                        Allelic frequency cutoff to filter variants (max)
+  --filter_biallelic    Run burden test on bi-allelic variants only
+  --filter_protein_domain
+                        Run burden test on variants within protein domain(s)
+                        only
+  --write_to_file       Write output to BGZ-compressed file
+  --overwrite           Overwrite pre-existing data
+  --default_ref_genome DEFAULT_REF_GENOME
+                        Default reference genome to start Hail
+  --run_test_mode       Run pipeline on smaller chunk of data (chr20) for
+                        testing propose
+
+
 """
 
 import functools
@@ -389,27 +423,38 @@ if __name__ == '__main__':
 
     parser.add_argument('-i', '--exome_cohort', help="One of <chd_ukbb> or <chd_ddd>",
                         type=str, default=None)
-    parser.add_argument('-o', '--output_dir', help='Path to output HailTable with VEP annotations parsed',
+
+    parser.add_argument('-o', '--output_dir', help='Path to output directory',
                         type=str, default=f'{nfs_dir}/hail_data/burden')
-    parser.add_argument('--skip_sample_qc_filtering', help='Skip the sample QC step',
+
+    parser.add_argument('--skip_sample_qc_filtering', help='Skip the sample QC filtering step',
                         action='store_true')
-    parser.add_argument('--skip_variant_qc_filtering', help='Skip the variant QC step',
+
+    parser.add_argument('--skip_variant_qc_filtering', help='Skip the variant QC filtering step',
                         action='store_true')
+
     parser.add_argument('--skip_af_filtering', help='Skip the allelic frequency filtering step',
                         action='store_true')
-    parser.add_argument('--af_max_threshold', help='Allelic frequency cutoff to filter variant (max)',
+
+    parser.add_argument('--af_max_threshold', help='Allelic frequency cutoff to filter variants (max)',
                         type=float, default=0.001)
+
     parser.add_argument('--filter_biallelic', help='Run burden test on bi-allelic variants only',
                         action='store_true')
+
     parser.add_argument('--filter_protein_domain', help='Run burden test on variants within protein domain(s) only',
                         action='store_true')
+
     parser.add_argument('--write_to_file', help='Write output to BGZ-compressed file',
                         action='store_true')
+
     parser.add_argument('--overwrite', help='Overwrite pre-existing data',
                         action='store_true')
+
     parser.add_argument('--default_ref_genome', help='Default reference genome to start Hail',
                         type=str, default='GRCh38')
-    parser.add_argument('--run_test_mode', help='Run pipeline on smaller chunk of data for testing propose',
+
+    parser.add_argument('--run_test_mode', help='Run pipeline on smaller chunk of data (chr20) for testing propose',
                         action='store_true')
 
     args = parser.parse_args()
