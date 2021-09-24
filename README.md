@@ -7,7 +7,7 @@ This repository contains a series of pipelines (mostly command-line tools) to an
 case-control exome sequencing cohort (~57,000 exomes).
 
 
-It has been adapted accordingly from the gnomad repository [1]. Pipelines were built using the python-like library
+Most pipelines were adapted from the gnomad repository [1]. Pipelines were built using the python-like library
 Hail (https://hail.is).
 
 
@@ -17,45 +17,48 @@ University of Nottingham (UK); controls were sequenced as part of the UK Biobank
 
 
 ### Sample QC
-1. *Hard filters*: Mark samples with unspecific chromosomal sex, low call rate and low call rate
+1. *Hard filters*: Mark samples with unspecific chromosomal sex, low call rate and/or low coverage.
     (`sample_qc/apply_hard_filters.py`)
     
-2. *Population ancestries inferring*: Impute sample ancestries using the the 1000 Genomes Phase 3 sequence dataset 
-    (`sample_qc/ancestry_inference.py`).
+2. *Population ancestries inferring*: Impute sample ancestries using the the 1000 Genomes Phase 3 sequence dataset. 
+    (`sample_qc/ancestry_inference.py`)
     
-3. *Inferring sample relatedness*: Identify twins/duplicated samples as well as first- and second-relatives 
-    (`sample_qc/relatedness_inference.py`).
+3. *Inferring sample relatedness*: Identify twins/duplicated samples as well as first- and second-relatives. 
+    (`sample_qc/relatedness_inference.py`)
     
-4. *Platform inference*: Assign capture platform to samples using unsupervised clustering 
-    (`sample_qc/platform_pca.py`).
+4. *Platform inference*: Assign capture platform to samples using unsupervised clustering. 
+    (`sample_qc/platform_pca.py`)
     
-5. *Platform- and population-specific outliers filtering*: Detect samples outliers stratified by population/platforms 
-    (`sample_qc/sample_qc.py`).
+5. *Platform- and population-specific outliers filtering*: Detect sample outliers stratified by population/platforms. 
+    (`sample_qc/sample_qc.py`)
     
 6. *Final sample QC*: Mark samples failing QC and generate HailMatrix with high-quality genotypes (dept of coverage >= 10, 
-    genotype quality >= 20 and genotype allele balance of heterozygotes > 0.20)
+    genotype quality >= 20 and genotype allele balance of heterozygotes > 0.20).
     (`sample_qc/finalise_sample_qc.py`)
 
 ### Variant QC
-1. *Hard filters*: Mark variants failing hard filters if a) showed an excess of heterozygotes
-    (inbreeding coefficient < -0.3) and b) absence of at least one sample with a high-quality genotype
+1. *Hard filters*: Mark variants failing hard filters if it a) showed an excess of heterozygotes
+    (inbreeding coefficient < -0.3) and b) contains absence of at least one sample with a high-quality genotype
                       
-2. *RF model*: Application of a random forest (RF) model to distinguish true variations from potential false positives
+2. *RF model*: Application of a random forest (RF) model to distinguish true variations from potential false positives.
     (`variant_qc/3.train_apply_finalise_RF.py`)
  
 3. *VQSR filter*: Application of the GATK Variant Quality Score Recalibration (VQSR) tool.
 
-4. *Coverage*: Mark variants as covered if a) is defined in the major capture platforms intervals used in the 
+4. *Coverage*: Mark variants as covered if it a) is defined in the major capture platforms intervals used in the 
                assembled cohort and b) showed a coverage of 10X or more in at least the 90% of the samples in 
                the gnomAD genome dataset (version 3.1.0).
                
-5. *Final variant QC*: Mark variants failing hard, random forest, VQSR and coverage filters
+5. *Final variant QC*: Mark variants failing hard, random forest, VQSR and/or coverage filters.
     (`variant_qc/finalise_variant_qc.py`)                
 
                
 ### Burden testing
 *Gene burden test*: Run gene-based case-control burden test (Fisher Exact) stratified by variant functional category 
 and proband syndromic status. (`pipelines/gene_burden_fet.py`)
+
+*Gene-set burden test*: Run gene set-based case-control burden test (logistic regression) stratified by variant functional category 
+and proband syndromic status. (`pipelines/geneset_burden_logreg.py`)
 
 
 ### Util scripts
