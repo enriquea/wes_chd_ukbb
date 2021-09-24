@@ -231,13 +231,15 @@ def main(args):
                          DOMAINS=vep_ht[mt.row_key].vep.DOMAINS,
                          SYMBOL=vep_ht[mt.row_key].vep.SYMBOL)
           )
-
+    
+    ## Filter to bi-allelic variants
     if args.filter_biallelic:
-        ## filter to bi-allelic
         logger.info('Running burden test on biallelic variants...')
         mt = mt.filter_rows(bi_allelic_expr(mt))
-
+    
+    ## Filter to variants within protein domain(s)
     if args.filter_protein_domain:
+        logger.info('Running burden test on variants within protein domain(s)...')
         mt = mt.filter_rows(
             vep_protein_domain_filter_expr(mt.DOMAINS),
             keep=True
