@@ -1,24 +1,30 @@
 # eam
-# 2021-09-08
+# 2021-09-11
+
 
 """
 
-Run case-control burden test (Fisher Exact) stratified by variant functional category and proband
+Run case-control burden test (logistic regression) on gene-sets, stratified by variant functional category and proband
 syndromic status.
 
-usage: gene_burden_fet.py [-h] [-i EXOME_COHORT] [-o OUTPUT_DIR]
-                          [--skip_sample_qc_filtering]
-                          [--skip_variant_qc_filtering] [--skip_af_filtering]
-                          [--af_max_threshold AF_MAX_THRESHOLD]
-                          [--filter_biallelic] [--filter_protein_domain]
-                          [--write_to_file] [--overwrite]
-                          [--default_ref_genome DEFAULT_REF_GENOME]
-                          [--run_test_mode]
+usage: geneset_burden_logreg.py [-h] [-i EXOME_COHORT] [-s SET_FILE]
+                                [-o OUTPUT_DIR] [--skip_sample_qc_filtering]
+                                [--skip_variant_qc_filtering]
+                                [--skip_af_filtering]
+                                [--af_max_threshold AF_MAX_THRESHOLD]
+                                [--filter_biallelic] [--filter_protein_domain]
+                                [--write_to_file] [--overwrite]
+                                [--default_ref_genome DEFAULT_REF_GENOME]
+                                [--run_test_mode]
 
 optional arguments:
   -h, --help            show this help message and exit
   -i EXOME_COHORT, --exome_cohort EXOME_COHORT
                         One of <chd_ukbb> or <chd_ddd>
+  -s SET_FILE, --set_file SET_FILE
+                        Path to gene-set file. Expected two-column TSV file
+                        without header (first column denotes cluster name/id,
+                        second column denotes gene names)
   -o OUTPUT_DIR, --output_dir OUTPUT_DIR
                         Path to output directory
   --skip_sample_qc_filtering
@@ -66,12 +72,11 @@ from utils.filter import (filter_low_conf_regions,
                           )
 
 from utils.generic import current_date
-from utils.stats import compute_fisher_exact
+from utils.stats import logistic_regression
 from utils.expressions import (af_filter_expr,
                                bi_allelic_expr)
 
 from utils.vep import vep_protein_domain_filter_expr
-
 
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger("Burden testing pipeline")
@@ -161,6 +166,29 @@ def apply_variant_qc_filtering(mt: hl.MatrixTable) -> hl.MatrixTable:
     return mt
 
 
+def generate_clusters_map(ht: hl.Table) -> hl.Table:
+    """
+    Generate a table mapping gene/features -> cluster_ids.
+    Expected as input a two-field HailTable: f0: cluster id, f1: gene/feature symbol.
+
+    :param ht: hl.HailTable
+    :return:  hl.HailTable
+    """
+
+    # rename fields
+    ht = (ht
+          .rename({'f0': 'cluster_id', 'f1': 'gene'})
+          )
+    clusters = (ht
+                .group_by('gene')
+                .aggregate(cluster_id=hl.agg.collect_as_set(ht.cluster_id))
+                .repartition(50)
+                .key_by('gene')
+                )
+
+    return clusters
+
+
 def main(args):
     hl.init(default_reference=args.default_ref_genome)
 
@@ -246,9 +274,9 @@ def main(args):
                      overwrite=True)
               )
 
-    # 4. ##### Burden Test ######
+    # 4. ##### Run gene-set burden logistic regression ######
 
-    logger.info('Running burden test...')
+    logger.info('Running gene-set burden logistic regression test...')
 
     if hl.hadoop_is_file(f'{hdfs_dir}/chd_ukbb.qc_final.rare.mt/_SUCCESS'):
         logger.info('Reading pre-existing sample/variant qc-filtered MT with rare variants...')
@@ -265,12 +293,12 @@ def main(args):
                          DOMAINS=vep_ht[mt.row_key].vep.DOMAINS,
                          SYMBOL=vep_ht[mt.row_key].vep.SYMBOL)
           )
-    
+
     ## Filter to bi-allelic variants
     if args.filter_biallelic:
         logger.info('Running burden test on biallelic variants...')
         mt = mt.filter_rows(bi_allelic_expr(mt))
-    
+
     ## Filter to variants within protein domain(s)
     if args.filter_protein_domain:
         logger.info('Running burden test on variants within protein domain(s)...')
@@ -326,84 +354,88 @@ def main(args):
           .filter_rows(hl.len(mt.csq_group) > 0)
           )
 
+    # Import/generate gene clusters
+    clusters = hl.import_table(args.set_file,
+                               no_header=True,
+                               delimiter="\t",
+                               min_partitions=50,
+                               impute=False
+                               )
+    clusters = generate_clusters_map(clusters)
+
     # Explode nested csq_group before grouping
+    # annotate gene-set info
+    mt = (mt
+          .annotate_rows(**clusters[mt.SYMBOL])
+          )
+
+    # Explode nested csq_group and gene clusters before grouping
     mt = (mt
           .explode_rows(mt.csq_group)
           )
 
-    # print('Number of samples/variants: ')
-    # print(mt.count())
+    mt = (mt
+          .explode_rows(mt.cluster_id)
+          )
+
+    # filter rows with defined consequence and gene-set name
+    mt = (mt
+          .filter_rows(hl.is_defined(mt.csq_group) &
+                       hl.is_defined(mt.cluster_id))
+          )
 
     # Group mt by gene/csq_group.
     mt_grouped = (mt
-                  .group_rows_by(mt.csq_group, mt.SYMBOL)
-                  .aggregate(n_het=hl.agg.count_where(mt.GT.is_het()))
-                  .repartition(500)
+                  .group_rows_by(mt.csq_group, mt.cluster_id)
+                  .aggregate(mac=hl.agg.sum(mt.GT.n_alt_alleles()))
+                  .repartition(100)
                   .persist()
                   )
 
-    # Generate table of counts
-    tb_gene = (
-        mt_grouped
-            .annotate_rows(
-            n_het_cases=hl.agg.filter(mt_grouped['phe.is_case'], hl.agg.count_where(mt_grouped.n_het > 0)),
-            n_het_syndromic=hl.agg.filter(mt_grouped['phe.is_syndromic'], hl.agg.count_where(mt_grouped.n_het > 0)),
-            n_het_nonsyndromic=hl.agg.filter(mt_grouped['phe.is_nonsyndromic'],
-                                             hl.agg.count_where(mt_grouped.n_het > 0)),
-            n_het_controls=hl.agg.filter(mt_grouped['phe.is_control'], hl.agg.count_where(mt_grouped.n_het > 0)),
-            n_total_cases=hl.agg.filter(mt_grouped['phe.is_case'], hl.agg.count()),
-            n_total_syndromic=hl.agg.filter(mt_grouped['phe.is_syndromic'], hl.agg.count()),
-            n_total_nonsyndromic=hl.agg.filter(mt_grouped['phe.is_nonsyndromic'], hl.agg.count()),
-            n_total_controls=hl.agg.filter(mt_grouped['phe.is_control'], hl.agg.count()))
-            .rows()
+    # annotate sample covs
+    covariates = hl.read_table(
+        f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.sample_covariates.ht'
     )
+    mt_grouped = (mt_grouped
+                  .annotate_cols(**covariates[mt_grouped.s])
+                  )
 
-    # run fet stratified by proband type
+    # run logistic regression stratified by proband type
     analysis = ['all_cases', 'syndromic', 'nonsyndromic']
 
     tbs = []
+
+    covs = ['sex', 'PC1', 'PC2', 'PC3', 'PC4', 'PC5']
+
     for proband in analysis:
-        logger.info(f'Running test for {proband}...')
-        colCases = None
-        colTotalCases = None
-        colControls = 'n_het_controls'
-        colTotalControls = 'n_total_controls'
+        print(f'Running test for {proband}...')
+
+        mt_tmp = hl.MatrixTable
+
         if proband == 'all_cases':
-            colCases = 'n_het_cases'
-            colTotalCases = 'n_total_cases'
+            mt_tmp = mt_grouped
         if proband == 'syndromic':
-            colCases = 'n_het_syndromic'
-            colTotalCases = 'n_total_syndromic'
+            mt_tmp = mt_grouped.filter_cols(~mt_grouped['phe.is_nonsyndromic'])
         if proband == 'nonsyndromic':
-            colCases = 'n_het_nonsyndromic'
-            colTotalCases = 'n_total_nonsyndromic'
+            mt_tmp = mt_grouped.filter_cols(~mt_grouped['phe.is_syndromic'])
 
-        tb_fet = compute_fisher_exact(tb=tb_gene,
-                                      n_cases_col=colCases,
-                                      n_control_col=colControls,
-                                      total_cases_col=colTotalCases,
-                                      total_controls_col=colTotalControls,
-                                      correct_total_counts=True,
-                                      root_col_name='fet',
-                                      extra_fields={'analysis': proband,
-                                                    'maf': maf_cutoff})
+        tb_logreg = logistic_regression(mt=mt_tmp,
+                                        x_expr='mac',
+                                        response='phe.is_case',
+                                        covs=covs,
+                                        pass_through=[],
+                                        extra_fields={'analysis': proband,
+                                                      'maf': maf_cutoff,
+                                                      'covs': '|'.join(covs)})
 
-        # filter out zero-count genes
-        tb_fet = (tb_fet
-                  .filter(hl.sum([tb_fet[colCases], tb_fet[colControls]]) > 0,
-                          keep=True)
-                  )
-
-        tbs.append(tb_fet)
+        tbs.append(tb_logreg)
 
     tb_final = hl.Table.union(*tbs)
-
-    tb_final.describe()
 
     # export results
     date = current_date()
     run_hash = str(uuid.uuid4())[:6]
-    output_path = f'{args.output_dir}/{date}/{args.exome_cohort}.fet_burden.{run_hash}.ht'
+    output_path = f'{args.output_dir}/{date}/{args.exome_cohort}.logreg_burden.{run_hash}.ht'
 
     tb_final = (tb_final
                 .checkpoint(output=output_path)
@@ -423,6 +455,12 @@ if __name__ == '__main__':
 
     parser.add_argument('-i', '--exome_cohort', help="One of <chd_ukbb> or <chd_ddd>",
                         type=str, default=None)
+
+    parser.add_argument('-s',
+                        '--set_file',
+                        help="Path to gene-set file. Expected two-column TSV file without header "
+                             "(first column denotes cluster name/id, second column denotes gene names)",
+                        default=None)
 
     parser.add_argument('-o', '--output_dir', help='Path to output directory',
                         type=str, default=f'{nfs_dir}/hail_data/burden')
