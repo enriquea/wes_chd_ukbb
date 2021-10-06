@@ -47,7 +47,7 @@ import logging
 import hail as hl
 
 from utils.data_utils import (get_sample_meta_data,
-                              get_fam_file)
+                              import_fam_ht)
 
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger("relatedness_inference")
@@ -234,7 +234,7 @@ def main(args):
                      )
 
     # import trios info
-    fam = get_fam_file()
+    fam = import_fam_ht()
     mat_ids = hl.set(fam.mat_id.collect())
     fat_ids = hl.set(fam.pat_id.collect())
 

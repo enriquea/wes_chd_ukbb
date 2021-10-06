@@ -3,7 +3,9 @@ import logging
 
 import hail as hl
 
-from resources.data_utils import get_mt_data, get_qc_mt_path, get_sample_qc_ht_path
+from utils.data_utils import (get_mt_data,
+                              get_qc_mt_path,
+                              get_sample_qc_ht_path)
 from utils.expressions import bi_allelic_expr
 from utils.generic import unphase_mt
 
