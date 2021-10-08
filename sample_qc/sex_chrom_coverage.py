@@ -12,7 +12,9 @@ from typing import Optional, Union
 
 import hail as hl
 
-from resources.data_utils import get_mt_data, get_sample_qc_ht_path, get_interval_ht
+from utils.data_utils import (get_mt_data,
+                              get_sample_qc_ht_path,
+                              get_capture_interval_ht)
 from utils.expressions import bi_allelic_expr
 from utils.reference_genome import get_reference_genome
 
@@ -142,8 +144,8 @@ def main(args):
 
     # read intervals for filtering variants (used mainly for exomes)
     def _get_interval_table(interval: str) -> Union[None, hl.Table]:
-        return get_interval_ht(name=interval,
-                               reference=args.default_reference) if interval is not None else interval
+        return get_capture_interval_ht(name=interval,
+                                       reference=args.default_reference) if interval is not None else interval
 
     ht = compute_mean_coverage(mt=mt,
                                normalization_contig=args.normalization_contig,
