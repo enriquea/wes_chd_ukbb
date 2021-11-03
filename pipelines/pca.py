@@ -52,7 +52,7 @@ def main(args):
               .naive_coalesce(500)
               )
 
-        logger.info("Checkpoint: writing joint filtered MT before LD pruning...")
+        logger.info("Checkpoint: writing filtered MT before LD pruning...")
         mt = mt.checkpoint(get_mt_checkpoint_path(dataset=args.exome_cohort,
                                                   part='high_callrate_common_snp_biallelic'),
                            overwrite=args.overwrite)
@@ -67,7 +67,7 @@ def main(args):
               .filter_rows(hl.is_defined(pruned_variant_table[mt.row_key]))
               )
 
-        logger.info("Writing filtered joint MT with variants in LD pruned...")
+        logger.info("Writing filtered MT with ld-pruned variants...")
         (mt
          .write(get_qc_mt_path(dataset=args.exome_cohort,
                                part='high_callrate_common_snp_biallelic',
@@ -76,13 +76,13 @@ def main(args):
                 overwrite=args.overwrite)
          )
 
-    logger.info("Importing filtered joint MT...")
+    logger.info("Importing filtered ld-pruned MT...")
     mt = hl.read_matrix_table(get_qc_mt_path(dataset=args.exome_cohort,
                                              part='high_callrate_common_snp_biallelic',
                                              split=True,
                                              ld_pruned=True))
 
-    logger.info(f"Running PCA with {mt.count_rows()} variants...")
+    logger.info(f"Running PCA on {mt.count_rows()} variants...")
     # run pca on merged dataset
     eigenvalues, pc_scores, _ = hl.hwe_normalized_pca(mt.GT,
                                                       k=args.n_pcs)
