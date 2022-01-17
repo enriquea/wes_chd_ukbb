@@ -413,7 +413,7 @@ def main(args):
         agg_genotype = 'homs'
 
         # Group mt by gene-sets/csq_group aggregating homs genotypes.
-        mt_grouped = (mt
+        mt_grouped = (mt_grouped
                       .group_rows_by(mt.csq_group, mt.cluster_id)
                       .aggregate(mac=hl.agg.sum(mt.homs))
                       .repartition(100)
@@ -425,7 +425,7 @@ def main(args):
         agg_genotype = 'chets'
 
         # Group mt by gene-sets/csq_group aggregating compound hets (chets) genotypes.
-        mt_grouped = (mt
+        mt_grouped = (mt_grouped
                       .group_rows_by(mt.csq_group, mt.cluster_id)
                       .aggregate(mac=hl.agg.sum(mt.chets))
                       .repartition(100)
@@ -437,7 +437,7 @@ def main(args):
         agg_genotype = 'homs_chets'
 
         # Group mt by gene-sets/csq_group aggregating chets and/or homs genotypes.
-        mt_grouped = (mt
+        mt_grouped = (mt_grouped
                       .group_rows_by(mt.csq_group, mt.cluster_id)
                       .aggregate(mac=hl.agg.count_where(mt.chets | mt.homs))
                       .repartition(100)
@@ -448,7 +448,7 @@ def main(args):
         agg_genotype = 'hets'
 
         # Group mt by gene-sets/csq_group aggregating hets genotypes (default)
-        mt_grouped = (mt
+        mt_grouped = (mt_grouped
                       .group_rows_by(mt.csq_group, mt.cluster_id)
                       .aggregate(mac=hl.agg.sum(mt.hets))
                       .repartition(100)
