@@ -53,6 +53,7 @@ import operator
 import argparse
 import logging
 import uuid
+import sys
 
 import hail as hl
 
@@ -354,6 +355,27 @@ def main(args):
           .filter_rows(hl.len(mt.csq_group) > 0)
           )
 
+    # Explode nested csq_group and gene clusters before grouping
+    mt = (mt
+          .explode_rows(mt.csq_group)
+          )
+
+    # First-step aggregation:
+    # Generate a sample per gene/variant_type matrix aggregating genotypes as follow:
+    #
+    #   a) entry: hets (0/1)
+    #   b) entry: homs (0/1)
+    #   c) entry: chets (0/1)
+
+    mt_grouped = (mt
+                  .group_rows_by(mt['SYMBOL'], mt['csq_group'])
+                  .aggregate(hets=hl.agg.any(mt.GT.is_het()),
+                             homs=hl.agg.any(mt.GT.is_hom_var()),
+                             chets=hl.agg.count_where(mt.GT.is_het()) >= 2)
+                  .repartition(100)
+                  .persist()
+                  )
+    ##
     # Import/generate gene clusters
     clusters = hl.import_table(args.set_file,
                                no_header=True,
@@ -363,34 +385,77 @@ def main(args):
                                )
     clusters = generate_clusters_map(clusters)
 
+    # Annotate gene-set info
+    mt_grouped = (mt_grouped
+                  .annotate_rows(**clusters[mt_grouped.SYMBOL])
+                  )
+
     # Explode nested csq_group before grouping
-    # annotate gene-set info
-    mt = (mt
-          .annotate_rows(**clusters[mt.SYMBOL])
-          )
-
-    # Explode nested csq_group and gene clusters before grouping
-    mt = (mt
-          .explode_rows(mt.csq_group)
-          )
-
-    mt = (mt
-          .explode_rows(mt.cluster_id)
-          )
+    mt_grouped = (mt_grouped
+                  .explode_rows(mt_grouped.cluster_id)
+                  )
 
     # filter rows with defined consequence and gene-set name
-    mt = (mt
-          .filter_rows(hl.is_defined(mt.csq_group) &
-                       hl.is_defined(mt.cluster_id))
-          )
-
-    # Group mt by gene/csq_group.
-    mt_grouped = (mt
-                  .group_rows_by(mt.csq_group, mt.cluster_id)
-                  .aggregate(mac=hl.agg.sum(mt.GT.n_alt_alleles()))
-                  .repartition(100)
-                  .persist()
+    mt_grouped = (mt_grouped
+                  .filter_rows(hl.is_defined(mt_grouped.csq_group) &
+                               hl.is_defined(mt_grouped.cluster_id))
                   )
+
+    # 2. Second-step aggregation
+    # Generate a sample per gene-sets/variant type matrix aggregating genotypes as follow:
+    # if dominant -> sum hets (default)
+    # if recessive -> sum (homs)
+    # if recessive (a) -> sum (chets)
+    # if recessive (b) -> sum (chets and/or homs)
+
+    if args.homs:
+
+        agg_genotype = 'homs'
+
+        # Group mt by gene-sets/csq_group aggregating homs genotypes.
+        mt_grouped = (mt
+                      .group_rows_by(mt.csq_group, mt.cluster_id)
+                      .aggregate(mac=hl.agg.sum(mt.homs))
+                      .repartition(100)
+                      .persist()
+                      )
+
+    elif args.chets:
+
+        agg_genotype = 'chets'
+
+        # Group mt by gene-sets/csq_group aggregating compound hets (chets) genotypes.
+        mt_grouped = (mt
+                      .group_rows_by(mt.csq_group, mt.cluster_id)
+                      .aggregate(mac=hl.agg.sum(mt.chets))
+                      .repartition(100)
+                      .persist()
+                      )
+
+    elif args.homs_chets:
+
+        agg_genotype = 'homs_chets'
+
+        # Group mt by gene-sets/csq_group aggregating chets and/or homs genotypes.
+        mt_grouped = (mt
+                      .group_rows_by(mt.csq_group, mt.cluster_id)
+                      .aggregate(mac=hl.agg.count_where(mt.chets | mt.homs))
+                      .repartition(100)
+                      .persist()
+                      )
+    else:
+
+        agg_genotype = 'hets'
+
+        # Group mt by gene-sets/csq_group aggregating hets genotypes (default)
+        mt_grouped = (mt
+                      .group_rows_by(mt.csq_group, mt.cluster_id)
+                      .aggregate(mac=hl.agg.sum(mt.hets))
+                      .repartition(100)
+                      .persist()
+                      )
+
+    logger.info(f'Running burden test on {agg_genotype} aggregated genotypes...')
 
     # annotate sample covs
     covariates = hl.read_table(
@@ -408,7 +473,7 @@ def main(args):
     covs = ['sex', 'PC1', 'PC2', 'PC3', 'PC4', 'PC5']
 
     for proband in analysis:
-        print(f'Running test for {proband}...')
+        logger.info(f'Running test for {proband}...')
 
         mt_tmp = hl.MatrixTable
 
@@ -426,6 +491,7 @@ def main(args):
                                         pass_through=[],
                                         extra_fields={'analysis': proband,
                                                       'maf': maf_cutoff,
+                                                      'agg_genotypes': agg_genotype,
                                                       'covs': '|'.join(covs)})
 
         tbs.append(tb_logreg)
@@ -483,6 +549,17 @@ if __name__ == '__main__':
     parser.add_argument('--filter_protein_domain', help='Run burden test on variants within protein domain(s) only',
                         action='store_true')
 
+    parser.add_argument('--homs', help='Aggregate homs genotypes to run the burden test. Default runs on hets',
+                        action='store_true')
+
+    parser.add_argument('--chets', help='Aggregate compound hets genotypes to run the burden test. '
+                                        'Default runs on hets',
+                        action='store_true')
+
+    parser.add_argument('--homs_chets', help='Aggregate compound hets and/or homs genotypes to run the burden test. '
+                                             'Default runs on hets',
+                        action='store_true')
+
     parser.add_argument('--write_to_file', help='Write output to BGZ-compressed file',
                         action='store_true')
 
@@ -496,5 +573,8 @@ if __name__ == '__main__':
                         action='store_true')
 
     args = parser.parse_args()
+
+    if args.homs + args.chets + args.homs_chets > 1:
+        sys.exit('Specifies just one of homs, chets or homs_chets options...')
 
     main(args)
