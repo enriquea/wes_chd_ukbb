@@ -414,8 +414,8 @@ def main(args):
 
         # Group mt by gene-sets/csq_group aggregating homs genotypes.
         mt_grouped = (mt_grouped
-                      .group_rows_by(mt.csq_group, mt.cluster_id)
-                      .aggregate(mac=hl.agg.sum(mt.homs))
+                      .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
+                      .aggregate(mac=hl.agg.sum(mt_grouped.homs))
                       .repartition(100)
                       .persist()
                       )
@@ -426,8 +426,8 @@ def main(args):
 
         # Group mt by gene-sets/csq_group aggregating compound hets (chets) genotypes.
         mt_grouped = (mt_grouped
-                      .group_rows_by(mt.csq_group, mt.cluster_id)
-                      .aggregate(mac=hl.agg.sum(mt.chets))
+                      .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
+                      .aggregate(mac=hl.agg.sum(mt_grouped.chets))
                       .repartition(100)
                       .persist()
                       )
@@ -438,8 +438,8 @@ def main(args):
 
         # Group mt by gene-sets/csq_group aggregating chets and/or homs genotypes.
         mt_grouped = (mt_grouped
-                      .group_rows_by(mt.csq_group, mt.cluster_id)
-                      .aggregate(mac=hl.agg.count_where(mt.chets | mt.homs))
+                      .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
+                      .aggregate(mac=hl.agg.count_where(mt_grouped.chets | mt_grouped.homs))
                       .repartition(100)
                       .persist()
                       )
@@ -449,8 +449,8 @@ def main(args):
 
         # Group mt by gene-sets/csq_group aggregating hets genotypes (default)
         mt_grouped = (mt_grouped
-                      .group_rows_by(mt.csq_group, mt.cluster_id)
-                      .aggregate(mac=hl.agg.sum(mt.hets))
+                      .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
+                      .aggregate(mac=hl.agg.sum(mt_grouped.hets))
                       .repartition(100)
                       .persist()
                       )
