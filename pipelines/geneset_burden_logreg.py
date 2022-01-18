@@ -13,7 +13,7 @@ usage: geneset_burden_logreg.py [-h] [-i EXOME_COHORT] [-s SET_FILE]
                                 [--skip_af_filtering]
                                 [--af_max_threshold AF_MAX_THRESHOLD]
                                 [--filter_biallelic] [--filter_protein_domain]
-                                [--homs] [--chets] [--homs_chets]
+                                [--hets] [--homs] [--chets] [--homs_chets]
                                 [--write_to_file] [--overwrite]
                                 [--default_ref_genome DEFAULT_REF_GENOME]
                                 [--run_test_mode]
@@ -39,12 +39,12 @@ optional arguments:
   --filter_protein_domain
                         Run burden test on variants within protein domain(s)
                         only
-  --homs                Aggregate homs genotypes to run the burden test.
-                        Default runs on hets.
+  --hets                Aggregate hets genotypes to run the burden test
+  --homs                Aggregate homs genotypes to run the burden test
   --chets               Aggregate compound hets genotypes to run the burden
-                        test. Default runs on hets.
+                        test
   --homs_chets          Aggregate compound hets and/or homs genotypes to run
-                        the burden test. Default runs on hets.
+                        the burden test
   --write_to_file       Write output to BGZ-compressed file
   --overwrite           Overwrite pre-existing data
   --default_ref_genome DEFAULT_REF_GENOME
@@ -276,7 +276,7 @@ def main(args):
               .filter_rows(functools.reduce(operator.iand, filter_expressions), keep=True)
               )
 
-        logger.info('Writing qc-filtered MT filtered to external maf with to disk...')
+        logger.info(f'Writing sample/variant QCed MT with rare variants at maf: {args.af_max_threshold}.')
         mt = (mt
               .write(f'{hdfs_dir}/chd_ukbb.qc_final.rare.mt',
                      overwrite=True)
@@ -314,16 +314,6 @@ def main(args):
             vep_protein_domain_filter_expr(mt.DOMAINS),
             keep=True
         )
-
-    ## Add cases/controls sample annotations
-    tb_sample = get_sample_meta_data()
-    mt = (mt
-          .annotate_cols(**tb_sample[mt.s])
-          )
-
-    mt = (mt
-          .filter_cols(mt['phe.is_case'] | mt['phe.is_control'])
-          )
 
     ## Annotate pathogenic scores
     ht_scores = get_vep_scores_ht()
@@ -382,7 +372,7 @@ def main(args):
                   .repartition(100)
                   .persist()
                   )
-    ##
+
     # Import/generate gene clusters
     clusters = hl.import_table(args.set_file,
                                no_header=True,
@@ -415,64 +405,79 @@ def main(args):
     # if recessive (a) -> sum (chets)
     # if recessive (b) -> sum (chets and/or homs)
 
+    mts = []
+
     if args.homs:
-
-        agg_genotype = 'homs'
-
         # Group mt by gene-sets/csq_group aggregating homs genotypes.
-        mt_grouped = (mt_grouped
-                      .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
-                      .aggregate(mac=hl.agg.sum(mt_grouped.homs))
-                      .repartition(100)
-                      .persist()
-                      )
+        mt_homs = (mt_grouped
+                   .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
+                   .aggregate(mac=hl.int(hl.agg.sum(mt_grouped.homs)))
+                   .repartition(100)
+                   .persist()
+                   .annotate_rows(agg_genotype='homs')
+                   )
 
-    elif args.chets:
+        mts.append(mt_homs)
 
-        agg_genotype = 'chets'
-
+    if args.chets:
         # Group mt by gene-sets/csq_group aggregating compound hets (chets) genotypes.
-        mt_grouped = (mt_grouped
-                      .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
-                      .aggregate(mac=hl.agg.sum(mt_grouped.chets))
-                      .repartition(100)
-                      .persist()
-                      )
+        mt_chets = (mt_grouped
+                    .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
+                    .aggregate(mac=hl.int(hl.agg.sum(mt_grouped.chets)))
+                    .repartition(100)
+                    .persist()
+                    .annotate_rows(agg_genotype='chets')
+                    )
 
-    elif args.homs_chets:
+        mts.append(mt_chets)
 
-        agg_genotype = 'homs_chets'
-
+    if args.homs_chets:
         # Group mt by gene-sets/csq_group aggregating chets and/or homs genotypes.
-        mt_grouped = (mt_grouped
-                      .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
-                      .aggregate(mac=hl.agg.count_where(mt_grouped.chets | mt_grouped.homs))
-                      .repartition(100)
-                      .persist()
-                      )
-    else:
+        mt_homs_chets = (mt_grouped
+                         .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
+                         .aggregate(mac=hl.int(hl.agg.count_where(mt_grouped.chets | mt_grouped.homs)))
+                         .repartition(100)
+                         .persist()
+                         .annotate_rows(agg_genotype='homs_chets')
+                         )
 
-        agg_genotype = 'hets'
+        mts.append(mt_homs_chets)
 
+    if args.hets:
         # Group mt by gene-sets/csq_group aggregating hets genotypes (default)
-        mt_grouped = (mt_grouped
-                      .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
-                      .aggregate(mac=hl.agg.sum(mt_grouped.hets))
-                      .repartition(100)
-                      .persist()
-                      )
+        mt_hets = (mt_grouped
+                   .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
+                   .aggregate(mac=hl.int(hl.agg.sum(mt_grouped.hets)))
+                   .repartition(100)
+                   .persist()
+                   .annotate_rows(agg_genotype='hets')
+                   )
 
-    logger.info(f'Running burden test on {agg_genotype} aggregated genotypes...')
+        mts.append(mt_hets)
 
+    ## Joint MatrixTables
+    mt_joint = hl.MatrixTable.union_rows(*mts)
+
+    ## Add samples annotations
     # annotate sample covs
     covariates = hl.read_table(
         f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.sample_covariates.ht'
     )
-    mt_grouped = (mt_grouped
-                  .annotate_cols(**covariates[mt_grouped.s])
-                  )
+    mt_joint = (mt_joint
+                .annotate_cols(**covariates[mt_joint.s])
+                )
 
-    # run logistic regression stratified by proband type
+    # annotate case/control phenotype info
+    tb_sample = get_sample_meta_data()
+    mt_joint = (mt_joint
+                .annotate_cols(**tb_sample[mt_joint.s])
+                )
+
+    mt_joint = (mt_joint
+                .filter_cols(mt_joint['phe.is_case'] | mt_joint['phe.is_control'])
+                )
+
+    ## Run logistic regression stratified by proband type
     analysis = ['all_cases', 'syndromic', 'nonsyndromic']
 
     tbs = []
@@ -480,25 +485,24 @@ def main(args):
     covs = ['sex', 'PC1', 'PC2', 'PC3', 'PC4', 'PC5']
 
     for proband in analysis:
-        logger.info(f'Running test for {proband}...')
+        logger.info(f'Running burden test for {proband}...')
 
         mt_tmp = hl.MatrixTable
 
         if proband == 'all_cases':
-            mt_tmp = mt_grouped
+            mt_tmp = mt_joint
         if proband == 'syndromic':
-            mt_tmp = mt_grouped.filter_cols(~mt_grouped['phe.is_nonsyndromic'])
+            mt_tmp = mt_joint.filter_cols(~mt_joint['phe.is_nonsyndromic'])
         if proband == 'nonsyndromic':
-            mt_tmp = mt_grouped.filter_cols(~mt_grouped['phe.is_syndromic'])
+            mt_tmp = mt_joint.filter_cols(~mt_joint['phe.is_syndromic'])
 
         tb_logreg = logistic_regression(mt=mt_tmp,
                                         x_expr='mac',
                                         response='phe.is_case',
                                         covs=covs,
-                                        pass_through=[],
+                                        pass_through=['agg_genotype'],
                                         extra_fields={'analysis': proband,
                                                       'maf': maf_cutoff,
-                                                      'agg_genotypes': agg_genotype,
                                                       'covs': '|'.join(covs)})
 
         tbs.append(tb_logreg)
@@ -556,15 +560,16 @@ if __name__ == '__main__':
     parser.add_argument('--filter_protein_domain', help='Run burden test on variants within protein domain(s) only',
                         action='store_true')
 
-    parser.add_argument('--homs', help='Aggregate homs genotypes to run the burden test. Default runs on hets',
+    parser.add_argument('--hets', help='Aggregate hets genotypes to run the burden test',
                         action='store_true')
 
-    parser.add_argument('--chets', help='Aggregate compound hets genotypes to run the burden test. '
-                                        'Default runs on hets',
+    parser.add_argument('--homs', help='Aggregate homs genotypes to run the burden test',
                         action='store_true')
 
-    parser.add_argument('--homs_chets', help='Aggregate compound hets and/or homs genotypes to run the burden test. '
-                                             'Default runs on hets',
+    parser.add_argument('--chets', help='Aggregate compound hets genotypes to run the burden test',
+                        action='store_true')
+
+    parser.add_argument('--homs_chets', help='Aggregate compound hets and/or homs genotypes to run the burden test',
                         action='store_true')
 
     parser.add_argument('--write_to_file', help='Write output to BGZ-compressed file',
@@ -581,7 +586,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if args.homs + args.chets + args.homs_chets > 1:
-        sys.exit('Specifies just one of homs, chets or homs_chets options...')
+    if args.hets + args.homs + args.chets + args.homs_chets == 0:
+        sys.exit('Specifies at least one of hets, homs, chets or homs_chets options...')
 
     main(args)
