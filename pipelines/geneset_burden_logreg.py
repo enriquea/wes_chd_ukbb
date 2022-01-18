@@ -13,6 +13,7 @@ usage: geneset_burden_logreg.py [-h] [-i EXOME_COHORT] [-s SET_FILE]
                                 [--skip_af_filtering]
                                 [--af_max_threshold AF_MAX_THRESHOLD]
                                 [--filter_biallelic] [--filter_protein_domain]
+                                [--homs] [--chets] [--homs_chets]
                                 [--write_to_file] [--overwrite]
                                 [--default_ref_genome DEFAULT_REF_GENOME]
                                 [--run_test_mode]
@@ -38,6 +39,12 @@ optional arguments:
   --filter_protein_domain
                         Run burden test on variants within protein domain(s)
                         only
+  --homs                Aggregate homs genotypes to run the burden test.
+                        Default runs on hets.
+  --chets               Aggregate compound hets genotypes to run the burden
+                        test. Default runs on hets.
+  --homs_chets          Aggregate compound hets and/or homs genotypes to run
+                        the burden test. Default runs on hets.
   --write_to_file       Write output to BGZ-compressed file
   --overwrite           Overwrite pre-existing data
   --default_ref_genome DEFAULT_REF_GENOME
@@ -361,11 +368,11 @@ def main(args):
           )
 
     # First-step aggregation:
-    # Generate a sample per gene/variant_type matrix aggregating genotypes as follow:
+    # Generate a sample per gene/variant_type (binary) matrix aggregating genotypes as follow:
     #
-    #   a) entry: hets (0/1)
-    #   b) entry: homs (0/1)
-    #   c) entry: chets (0/1)
+    #   a) entry: hets
+    #   b) entry: homs
+    #   c) entry: chets (compound hets)
 
     mt_grouped = (mt
                   .group_rows_by(mt['SYMBOL'], mt['csq_group'])
