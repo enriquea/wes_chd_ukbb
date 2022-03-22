@@ -11,6 +11,7 @@ usage: gene_burden_fet.py [-h] [-i EXOME_COHORT] [-o OUTPUT_DIR]
                           [--skip_variant_qc_filtering] [--skip_af_filtering]
                           [--af_max_threshold AF_MAX_THRESHOLD]
                           [--filter_biallelic] [--filter_protein_domain]
+                          [--hets] [--homs] [--chets] [--homs_chets]
                           [--write_to_file] [--overwrite]
                           [--default_ref_genome DEFAULT_REF_GENOME]
                           [--run_test_mode]
@@ -32,6 +33,12 @@ optional arguments:
   --filter_protein_domain
                         Run burden test on variants within protein domain(s)
                         only
+  --hets                Aggregate hets genotypes to run the burden test
+  --homs                Aggregate homs genotypes to run the burden test
+  --chets               Aggregate compound hets genotypes to run the burden
+                        test
+  --homs_chets          Aggregate compound hets and/or homs genotypes to run
+                        the burden test
   --write_to_file       Write output to BGZ-compressed file
   --overwrite           Overwrite pre-existing data
   --default_ref_genome DEFAULT_REF_GENOME
@@ -42,11 +49,12 @@ optional arguments:
 
 """
 
-import functools
-import operator
 import argparse
+import functools
 import logging
+import operator
 import uuid
+import sys
 
 import hail as hl
 
@@ -54,24 +62,14 @@ from utils.data_utils import (get_af_annotation_ht,
                               get_sample_meta_data,
                               get_qc_mt_path,
                               get_vep_scores_ht,
-                              get_variant_qc_ht_path,
-                              get_sample_qc_ht_path,
                               get_mt_data, get_vep_annotation_ht)
-
-from utils.filter import (filter_low_conf_regions,
-                          filter_to_autosomes,
-                          filter_to_cds_regions,
-                          filter_capture_intervals,
-                          remove_telomeres_centromes
-                          )
-
-from utils.generic import current_date
-from utils.stats import compute_fisher_exact
 from utils.expressions import (af_filter_expr,
                                bi_allelic_expr)
-
+from utils.generic import current_date
+from utils.qc import (apply_sample_qc_filtering,
+                      apply_variant_qc_filtering)
+from utils.stats import compute_fisher_exact
 from utils.vep import vep_protein_domain_filter_expr
-
 
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger("Burden testing pipeline")
@@ -86,79 +84,6 @@ MVP_THRESHOLD = 0.8
 REVEL_THRESHOLD = 0.5
 CADD_THRESHOLD = 25
 MPC_THRESHOLD = 2
-
-
-def apply_sample_qc_filtering(mt: hl.MatrixTable,
-                              keep_rare_variants: bool = True,
-                              maf_threshold: float = 0.01) -> hl.MatrixTable:
-    """
-    Apply sample QC filtering, compute internal allelic frequencies on samples passing qc and
-    adjusted phenotypes. Optionally, return MT filtered to rare variants.
-
-    :param mt: hl.MatrixTable
-    :param keep_rare_variants: Filter MT to rare variants
-    :param maf_threshold: allelic frequency cutoff
-    :return: hl.MatrixTable
-    """
-    # import variant qc final table
-    sample_qc_ht = hl.read_table(
-        get_sample_qc_ht_path(part='final_qc')
-    )
-    sample_qc_ht = (sample_qc_ht
-                    .filter(sample_qc_ht.pass_filters)
-                    )
-    mt = (mt
-          .filter_cols(hl.is_defined(sample_qc_ht[mt.col_key]))
-          )
-    # compute cohort-specific (internal) allelic frequencies on samples passing qc
-    mt = (mt
-          .annotate_rows(gt_stats=hl.agg.call_stats(mt.GT, mt.alleles))
-          )
-    mt = (mt
-          .annotate_rows(internal_af=mt.gt_stats.AF[1],
-                         internal_ac=mt.gt_stats.AC[1])
-          )
-    # filter out common variants base don internal af
-    if keep_rare_variants:
-        mt = (mt
-              .filter_rows(af_filter_expr(mt, 'internal_af', maf_threshold))
-              )
-
-    return mt
-
-
-def apply_variant_qc_filtering(mt: hl.MatrixTable) -> hl.MatrixTable:
-    """
-    Apply variant QC filtering
-
-    :param mt: hl.MatrixTable
-    :return: hl.MatrixTable
-    """
-    # import variant qc final table
-    variant_qc_ht = hl.read_table(
-        get_variant_qc_ht_path(part='final_qc')
-    )
-    mt = (mt
-          .annotate_rows(**variant_qc_ht[mt.row_key])
-          )
-    mt = (mt
-          .filter_rows(~mt.fail_inbreeding_coeff &
-                       ~mt.AC0 &
-                       ~mt.fail_vqsr &
-                       ~mt.fail_rf &
-                       mt.is_coveraged_gnomad_genomes &
-                       mt.is_defined_capture_intervals)
-          )
-    # filter low conf regions
-    mt = filter_low_conf_regions(
-        mt,
-        filter_lcr=True,  # TODO: include also decoy and low coverage exome regions
-        filter_segdup=True
-    )
-    # filter telomeres/centromes
-    mt = remove_telomeres_centromes(mt)
-
-    return mt
 
 
 def main(args):
@@ -265,12 +190,12 @@ def main(args):
                          DOMAINS=vep_ht[mt.row_key].vep.DOMAINS,
                          SYMBOL=vep_ht[mt.row_key].vep.SYMBOL)
           )
-    
+
     ## Filter to bi-allelic variants
     if args.filter_biallelic:
         logger.info('Running burden test on biallelic variants...')
         mt = mt.filter_rows(bi_allelic_expr(mt))
-    
+
     ## Filter to variants within protein domain(s)
     if args.filter_protein_domain:
         logger.info('Running burden test on variants within protein domain(s)...')
@@ -336,21 +261,65 @@ def main(args):
 
     # Group mt by gene/csq_group.
     mt_grouped = (mt
-                  .group_rows_by(mt.csq_group, mt.SYMBOL)
-                  .aggregate(n_het=hl.agg.count_where(mt.GT.is_het()))
-                  .repartition(500)
+                  .group_rows_by(mt['SYMBOL'], mt['csq_group'])
+                  .aggregate(hets=hl.agg.any(mt.GT.is_het()),
+                             homs=hl.agg.any(mt.GT.is_hom_var()),
+                             chets=hl.agg.count_where(mt.GT.is_het()) >= 2,
+                             homs_chets=(hl.agg.count_where(mt.GT.is_het()) >= 2) | (hl.agg.any(mt.GT.is_hom_var()))
+                             )
+                  .repartition(100)
                   .persist()
                   )
+    mts = []
+
+    if args.homs:
+        # select homs genotypes.
+
+        mt_homs = (mt_grouped
+                   .select_entries(mac=mt_grouped.homs)
+                   .annotate_rows(agg_genotype='homs')
+                   )
+
+        mts.append(mt_homs)
+
+    if args.chets:
+        # select compound hets (chets) genotypes.
+        mt_chets = (mt_grouped
+                    .select_entries(mac=mt_grouped.chets)
+                    .annotate_rows(agg_genotype='chets')
+                    )
+
+        mts.append(mt_chets)
+
+    if args.homs_chets:
+        # select chets and/or homs genotypes.
+        mt_homs_chets = (mt_grouped
+                         .select_entries(mac=mt_grouped.homs_chets)
+                         .annotate_rows(agg_genotype='homs_chets')
+                         )
+
+        mts.append(mt_homs_chets)
+
+    if args.hets:
+        # select hets genotypes
+        mt_hets = (mt_grouped
+                   .select_entries(mac=mt_grouped.hets)
+                   .annotate_rows(agg_genotype='hets')
+                   )
+
+        mts.append(mt_hets)
+
+    ## Joint MatrixTables
+    mt_grouped = hl.MatrixTable.union_rows(*mts)
 
     # Generate table of counts
     tb_gene = (
         mt_grouped
             .annotate_rows(
-            n_het_cases=hl.agg.filter(mt_grouped['phe.is_case'], hl.agg.count_where(mt_grouped.n_het > 0)),
-            n_het_syndromic=hl.agg.filter(mt_grouped['phe.is_syndromic'], hl.agg.count_where(mt_grouped.n_het > 0)),
-            n_het_nonsyndromic=hl.agg.filter(mt_grouped['phe.is_nonsyndromic'],
-                                             hl.agg.count_where(mt_grouped.n_het > 0)),
-            n_het_controls=hl.agg.filter(mt_grouped['phe.is_control'], hl.agg.count_where(mt_grouped.n_het > 0)),
+            n_cases=hl.agg.filter(mt_grouped['phe.is_case'], hl.agg.sum(mt_grouped.mac)),
+            n_syndromic=hl.agg.filter(mt_grouped['phe.is_syndromic'], hl.agg.sum(mt_grouped.mac)),
+            n_nonsyndromic=hl.agg.filter(mt_grouped['phe.is_nonsyndromic'], hl.agg.sum(mt_grouped.mac)),
+            n_controls=hl.agg.filter(mt_grouped['phe.is_control'], hl.agg.sum(mt_grouped.mac)),
             n_total_cases=hl.agg.filter(mt_grouped['phe.is_case'], hl.agg.count()),
             n_total_syndromic=hl.agg.filter(mt_grouped['phe.is_syndromic'], hl.agg.count()),
             n_total_nonsyndromic=hl.agg.filter(mt_grouped['phe.is_nonsyndromic'], hl.agg.count()),
@@ -366,16 +335,16 @@ def main(args):
         logger.info(f'Running test for {proband}...')
         colCases = None
         colTotalCases = None
-        colControls = 'n_het_controls'
+        colControls = 'n_controls'
         colTotalControls = 'n_total_controls'
         if proband == 'all_cases':
-            colCases = 'n_het_cases'
+            colCases = 'n_cases'
             colTotalCases = 'n_total_cases'
         if proband == 'syndromic':
-            colCases = 'n_het_syndromic'
+            colCases = 'n_syndromic'
             colTotalCases = 'n_total_syndromic'
         if proband == 'nonsyndromic':
-            colCases = 'n_het_nonsyndromic'
+            colCases = 'n_nonsyndromic'
             colTotalCases = 'n_total_nonsyndromic'
 
         tb_fet = compute_fisher_exact(tb=tb_gene,
@@ -445,6 +414,18 @@ if __name__ == '__main__':
     parser.add_argument('--filter_protein_domain', help='Run burden test on variants within protein domain(s) only',
                         action='store_true')
 
+    parser.add_argument('--hets', help='Aggregate hets genotypes to run the burden test',
+                        action='store_true')
+
+    parser.add_argument('--homs', help='Aggregate homs genotypes to run the burden test',
+                        action='store_true')
+
+    parser.add_argument('--chets', help='Aggregate compound hets genotypes to run the burden test',
+                        action='store_true')
+
+    parser.add_argument('--homs_chets', help='Aggregate compound hets and/or homs genotypes to run the burden test',
+                        action='store_true')
+
     parser.add_argument('--write_to_file', help='Write output to BGZ-compressed file',
                         action='store_true')
 
@@ -458,5 +439,8 @@ if __name__ == '__main__':
                         action='store_true')
 
     args = parser.parse_args()
+
+    if args.hets + args.homs + args.chets + args.homs_chets == 0:
+        sys.exit('Specifies at least one of hets, homs, chets or homs_chets options...')
 
     main(args)
