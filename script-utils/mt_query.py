@@ -102,6 +102,8 @@ def main(args):
     ## Filter to geneset
     mt = (mt
           .filter_rows(hl.set(geneset).contains(mt.SYMBOL))
+          .checkpoint(f'{nfs_tmp}/tmp.mt',
+                      overwrite=True)
           )
 
     ## Sample-QC filtering
