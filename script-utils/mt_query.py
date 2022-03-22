@@ -86,16 +86,34 @@ def main(args):
                                              part='unphase_adj_genotypes',
                                              split=True))
 
+    ## Add VEP-annotated fields
+    vep_ht = get_vep_annotation_ht()
+
+    mt = (mt
+          .annotate_rows(LoF=vep_ht[mt.row_key].vep.LoF,
+                         Consequence=vep_ht[mt.row_key].vep.Consequence,
+                         DOMAINS=vep_ht[mt.row_key].vep.DOMAINS,
+                         SYMBOL=vep_ht[mt.row_key].vep.SYMBOL)
+          )
+
+    ## Parse geneset
+    geneset = parse_geneset(args.geneset_file)
+
+    ## Filter to geneset
+    mt = (mt
+          .filter_rows(hl.set(geneset).contains(mt.SYMBOL))
+          )
+
     ## Sample-QC filtering
     if args.apply_sample_qc_filtering:
         logger.info('Applying per sample QC filtering...')
 
         mt = apply_sample_qc_filtering(mt)
 
-        logger.info('Writing sample qc-filtered mt with rare variants (internal maf 0.01) to disk...')
+        logger.info('Writing sample qc-filtered MT to disk...')
         mt = (mt
-              .write(f'{hdfs_dir}/chd_ukbb.sample_qc_filtered.mt',
-                     overwrite=True)
+              .checkpoint(f'{hdfs_dir}/chd_ukbb.sample_qc_filtered.mt',
+                          overwrite=True)
               )
 
     ## Variant-QC filtering
@@ -107,8 +125,8 @@ def main(args):
         # write hard filtered MT to disk
         logger.info('Writing variant qc-filtered mt with rare variants (internal maf 0.01) to disk...')
         mt = (mt
-              .write(f'{hdfs_dir}/chd_ukbb.variant_qc_filtered.mt',
-                     overwrite=True)
+              .checkpoint(f'{hdfs_dir}/chd_ukbb.variant_qc_filtered.mt',
+                          overwrite=True)
               )
 
     ## Filtering by AFs
@@ -139,32 +157,14 @@ def main(args):
 
         logger.info('Writing AF-filtered MT to disk...')
         mt = (mt
-              .write(f'{hdfs_dir}/chd_ukbb.qc_final.rare.mt',
-                     overwrite=True)
+              .checkpoint(f'{hdfs_dir}/chd_ukbb.qc_final.rare.mt',
+                          overwrite=True)
               )
 
     ## Filter to bi-allelic variants
     if args.filter_biallelic:
         logger.info('Running burden test on biallelic variants...')
         mt = mt.filter_rows(bi_allelic_expr(mt))
-
-    ## Add VEP-annotated fields
-    vep_ht = get_vep_annotation_ht()
-
-    mt = (mt
-          .annotate_rows(LoF=vep_ht[mt.row_key].vep.LoF,
-                         Consequence=vep_ht[mt.row_key].vep.Consequence,
-                         DOMAINS=vep_ht[mt.row_key].vep.DOMAINS,
-                         SYMBOL=vep_ht[mt.row_key].vep.SYMBOL)
-          )
-
-    ## Parse geneset
-    geneset = parse_geneset(args.geneset_file)
-
-    ## Filter to geneset
-    mt = (mt
-          .filter_rows(hl.set(geneset).contains(mt.SYMBOL))
-          )
 
     ## Generate blind sample IDs
     mt = mt.add_col_index()
