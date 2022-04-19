@@ -90,6 +90,7 @@ from utils.data_utils import (get_af_annotation_ht,
                               get_mt_data, get_vep_annotation_ht)
 from utils.expressions import (af_filter_expr,
                                bi_allelic_expr)
+from utils.filter import filter_ccr
 from utils.generic import current_date
 from utils.qc import (apply_sample_qc_filtering,
                       apply_variant_qc_filtering)
@@ -106,7 +107,6 @@ hdfs_dir = 'hdfs://spark-master:9820/dir'
 
 
 def main(args):
-
     hl.init(default_reference=args.default_ref_genome)
 
     # Deleterious scores cutoff
@@ -229,6 +229,11 @@ def main(args):
             vep_protein_domain_filter_expr(mt.DOMAINS),
             keep=True
         )
+
+    ## Filter to variants within CCRs
+    if args.filter_ccr:
+        logger.info('Running burden test on variants within CCRs...')
+        mt = filter_ccr(mt, ccr_pct=args.ccr_pct_cutoff)
 
     ## Add cases/controls sample annotations
     tb_sample = get_sample_meta_data()
@@ -468,6 +473,13 @@ if __name__ == '__main__':
 
     qc_filtering_group.add_argument('--filter_biallelic', help='Run burden test on bi-allelic variants only',
                                     action='store_true')
+
+    qc_filtering_group.add_argument('--filter_ccr',
+                                    help='Run burden test on variants within CCRs only',
+                                    action='store_true')
+
+    qc_filtering_group.add_argument('--ccr_pct_cutoff', help='CCRs percentile cutoff',
+                                    type=float, default=95.0)
 
     qc_filtering_group.add_argument('--filter_protein_domain',
                                     help='Run burden test on variants within protein domain(s) only',

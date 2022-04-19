@@ -203,6 +203,17 @@ def get_vep_scores_ht() -> hl.Table:
     ).key_by('locus', 'alleles')
 
 
+def get_ccr_ht() -> hl.Table:
+    """
+    Return HT with coding-constraint regions (CCRs) and percentile lifted over hg38
+
+    :return: HailTable
+    """
+    return hl.read_table(
+        f"{nfs_dir}/resources/ccr/ccr_hg38.ht"
+    )
+
+
 ##### gnomad resources #####
 
 def get_gnomad_genomes_coverage_ht() -> hl.Table:
