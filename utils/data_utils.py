@@ -180,6 +180,12 @@ def get_variant_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None, split=Tr
     return f'{nfs_dir}/hail_data/variant_qc/{dataset}.variant_qc.{part}{split}.ht'
 
 
+def get_variant_af_pops_ht_path(dataset: str = 'chd_ukbb',
+                                split=True) -> str:
+    split = '.split' if split else ''
+    return f'{nfs_dir}/hail_data/variant_qc/{dataset}.af_pops.{split}.ht'
+
+
 def get_vep_vqsr_vcf_path() -> str:
     return f'{nfs_dir}/chd_ukbb_vep/recal_snp_recal_indelgenome.sorted.vcf.gz'
 
