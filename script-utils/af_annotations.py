@@ -60,7 +60,6 @@ gnomad_exomes_af_expr = {f: hl.parse_float(variant_ht.vep[f]) for f in gnomad_ex
 # add gnomad exomes AF expression to annotation dict
 af_ann_expr.update(gnomad_exomes_af_expr)
 
-
 ## annotate afs
 variant_ht = (variant_ht
               .annotate(**af_ann_expr)
@@ -71,7 +70,6 @@ variant_ht = (variant_ht
               .select(*af_fields)
               )
 
-
 ## add global annotation
 date = current_date()
 global_ann_expr = {'date': date,
@@ -80,18 +78,15 @@ variant_ht = (variant_ht
               .annotate_globals(**global_ann_expr)
               )
 
-
 ## export af table
 
 # write to Hail table
 output_path_ht = f'{nfs_dir}/hail_data/hts/chd_ukbb.variants.af.annotations.external.{date}.ht'
 variant_ht = (variant_ht
               .checkpoint(output_path_ht, overwrite=True)
-             )
+              )
 
 # write to TSV file    
 (variant_ht
-  .export(f'{output_path_ht}.tsv.bgz')
-)
-
-
+ .export(f'{output_path_ht}.tsv.bgz')
+ )
