@@ -28,12 +28,11 @@ hdfs_dir = 'hdfs://spark-master:9820/dir'
 
 
 def annotate_release_samples(ht: hl.Table):
-    sample_release_expr = {'release_sample': hl.cond(
+    ht=ht.annotate(release_sample=hl.cond(
         (hl.len(ht.hard_filters) == 0) &
         (hl.len(ht.pop_platform_filters) == 0) &
         ~ht.is_related,
-        True, False)}
-    ht.annotate(**sample_release_expr)
+        True, False))
     return ht
 
 
@@ -83,9 +82,9 @@ def main(args):
              )
 
     # annotate (unnest) AFs, ACs and Homozygote counts per population groups
-    field_call_stats = ['AF', 'AC', 'AN', 'homozygote_count']
+    field_call_stats = ['AF', 'AC', 'homozygote_count']
     ht_cs = (ht_cs
-             .annotate(**{f'{f}_{p}': ht_cs[f'call_stats_{p}'][f][1]
+             .annotate(**{f'{f}_{p}': ht_cs[f'call_stats_{p}'].get(f)[1]
                           for p in pops
                           for f in field_call_stats})
              )
