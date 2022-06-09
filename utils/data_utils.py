@@ -171,6 +171,7 @@ def get_variant_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None, split=Tr
     qc_parts = ['vep_vqsr',
                 'hard_filters',
                 'rf_result',
+                'coverage_stats',
                 'final_qc']
 
     if part not in qc_parts:

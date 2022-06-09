@@ -8,27 +8,28 @@ If specified, a binomial test is run to access independence between the case/con
 and coverage.
 
 
-usage: compute_coverage.py [-h] [--mt_input_path MT_INPUT_PATH]
-                                [--ht_output_path HT_OUTPUT_PATH]
-                                [--write_to_file] [--overwrite]
-                                [--default_ref_genome DEFAULT_REF_GENOME]
-                                [--compute_overall_coverage]
-                                [--compute_phe_coverage]
-                                [--run_binomial_test] [--phe_field PHE_FIELD]
-                                [--pvalue_threshold PVALUE_THRESHOLD]
-                                [--min_sample_proportion MIN_SAMPLE_PROPORTION]
+usage: compute_coverage.py [-h] [-i EXOME_COHORT] [--write_to_file]
+                           [--overwrite]
+                           [--default_ref_genome DEFAULT_REF_GENOME]
+                           [--skip_sample_qc_filtering]
+                           [--compute_overall_coverage]
+                           [--compute_phe_coverage] [--run_binomial_test]
+                           [--phe_field PHE_FIELD]
+                           [--pvalue_threshold PVALUE_THRESHOLD]
+                           [--min_sample_proportion MIN_SAMPLE_PROPORTION]
+                           [--run_test_mode]
 
 optional arguments:
   -h, --help            show this help message and exit
-  --mt_input_path MT_INPUT_PATH
-                        Path to input Hail MatrixTable
-  --ht_output_path HT_OUTPUT_PATH
-                        Path to output HailTable with coverage stats
+  -i EXOME_COHORT, --exome_cohort EXOME_COHORT
+                        One of <chd_ukbb> or <chd_ddd>
   --write_to_file       Write output to BGZ-compressed file
   --overwrite           Overwrite results in HT output path if already
                         exists...
   --default_ref_genome DEFAULT_REF_GENOME
                         Default reference genome to start Hail
+  --skip_sample_qc_filtering
+                        Skip the sample QC filtering step
   --compute_overall_coverage
                         Compute coverage stats over all samples.
   --compute_phe_coverage
@@ -49,6 +50,9 @@ optional arguments:
                         The (minimal) proportion of samples with coverage
                         equal or higher than certain level (default 10X) to
                         consider a site well covered.
+  --run_test_mode       Run pipeline on smaller chunk of data (chr20) for
+                        testing propose
+
 
 """
 
@@ -60,7 +64,10 @@ from typing import List
 import hail as hl
 
 from utils.generic import current_date
-from utils.data_utils import get_sample_meta_data
+from utils.data_utils import (get_sample_meta_data,
+                              get_mt_data,
+                              get_qc_mt_path, get_variant_qc_ht_path)
+from utils.qc import apply_sample_qc_filtering
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -160,11 +167,11 @@ def compute_coverage_stats(
         **{
             f"over_{x}": count_array_expr[i] / n_samples
             for i, x in zip(
-            range(
-                len(coverage_over_x_bins) - 1, -1, -1
-            ),  # Reverse the bin index as count_array_expr has the reverse order
-            coverage_over_x_bins,
-        )
+                range(
+                    len(coverage_over_x_bins) - 1, -1, -1
+                ),  # Reverse the bin index as count_array_expr has the reverse order
+                coverage_over_x_bins,
+            )
         },
     ).rows()
 
@@ -174,7 +181,23 @@ def main(args):
     hl.init(default_reference=args.default_ref_genome)
 
     # import MT
-    mt = hl.read_matrix_table(args.mt_input_path)
+    ds = args.exome_cohort
+    if args.run_test_mode:
+        logger.info('Running pipeline on test data...')
+        mt = (get_mt_data(part='raw_chr20')
+              .sample_rows(0.1)
+              )
+    else:
+        logger.info('Running pipeline on MatrixTable wih adjusted genotypes...')
+        mt = hl.read_matrix_table(get_qc_mt_path(dataset=ds,
+                                                 part='unphase_adj_genotypes',
+                                                 split=True))
+
+    # keep samples passing qc to compute base-pair coverage
+    # 1. Sample-QC filtering
+    if not args.skip_sample_qc_filtering:
+        logger.info('Applying per sample QC filtering...')
+        mt = apply_sample_qc_filtering(mt)
 
     n_variants, n_samples = mt.count()
 
@@ -299,7 +322,7 @@ def main(args):
     # as well as affected/non-affected summary counts per filters
     global_ann_dict_expr = {
         'date': current_date(),
-        'mt_path': args.mt_input_path,
+        'cohort': ds,
         'min_sample_prop': min_sample_prop}
     if args.compute_overall_coverage:
         global_ann_dict_expr.update({'overall_hard_cutoff':
@@ -330,25 +353,26 @@ def main(args):
     tb_variants.describe()
 
     # write HT
+    ht_output_path = get_variant_qc_ht_path(dataset=ds, part='coverage_stats')
     tb_variants = tb_variants.checkpoint(
-        output=args.ht_output_path,
+        output=ht_output_path,
         overwrite=args.overwrite)
 
     # export to file if true
     if args.write_to_file:
         (tb_variants
-         .export(f'{args.ht_output_path}.tsv.bgz')
+         .export(f'{ht_output_path}.tsv.bgz')
          )
 
     hl.stop()
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--mt_input_path',
-                        help='Path to input Hail MatrixTable')
 
-    parser.add_argument('--ht_output_path', help='Path to output HailTable with coverage stats')
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('-i', '--exome_cohort', help="One of <chd_ukbb> or <chd_ddd>",
+                        type=str, default='chd_ukbb')
 
     parser.add_argument('--write_to_file', help='Write output to BGZ-compressed file',
                         action='store_true')
@@ -358,6 +382,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--default_ref_genome', help='Default reference genome to start Hail',
                         type=str, default='GRCh38')
+
+    parser.add_argument('--skip_sample_qc_filtering', help='Skip the sample QC filtering step',
+                        action='store_true')
 
     parser.add_argument('--compute_overall_coverage',
                         help='Compute coverage stats over all samples.',
@@ -388,6 +415,9 @@ if __name__ == '__main__':
                               than certain level (default 10X) to consider a site well covered.',
                         type=float,
                         default=0.9)
+
+    parser.add_argument('--run_test_mode', help='Run pipeline on smaller chunk of data (chr20) for testing propose',
+                        action='store_true')
 
     args = parser.parse_args()
 
