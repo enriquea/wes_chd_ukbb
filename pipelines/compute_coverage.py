@@ -361,6 +361,7 @@ def main(args):
     # export to file if true
     if args.write_to_file:
         (tb_variants
+         .flatten()
          .export(f'{ht_output_path}.tsv.bgz')
          )
 
