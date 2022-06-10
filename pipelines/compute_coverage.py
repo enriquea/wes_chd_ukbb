@@ -188,10 +188,8 @@ def main(args):
               .sample_rows(0.1)
               )
     else:
-        logger.info('Running pipeline on MatrixTable wih adjusted genotypes...')
-        mt = hl.read_matrix_table(get_qc_mt_path(dataset=ds,
-                                                 part='unphase_adj_genotypes',
-                                                 split=True))
+        logger.info('Running pipeline on raw MatrixTable...')
+        mt = get_mt_data(part='raw')
 
     # keep samples passing qc to compute base-pair coverage
     # 1. Sample-QC filtering
@@ -251,8 +249,10 @@ def main(args):
             # perform a binomial test on coverage and case/control status
             # DOI: https://doi.org/10.1002/acn3.582
             tb_binomial = (tb_variants
-                           .annotate(n_cases_over_10=hl.int(tb_variants.case.over_10 * 100),
-                                     n_controls_over_10=hl.int(tb_variants.control.over_10 * 100),
+                           .annotate(n_cases_over_10=hl.int(tb_variants.case.over_10 *
+                                                            tb_variants.case.n_samples),
+                                     n_controls_over_10=hl.int(tb_variants.control.over_10 *
+                                                               tb_variants.control.n_samples),
                                      total_cases=tb_variants.case.n_samples,
                                      total_controls=tb_variants.control.n_samples,
                                      )
