@@ -7,14 +7,18 @@ Run case-control burden test (Fisher Exact) stratified by variant functional cat
 syndromic status.
 
 usage: gene_burden_fet.py [-h] [-i EXOME_COHORT] [-o OUTPUT_DIR]
-                          [--skip_sample_qc_filtering]
+                          [--write_to_file] [--overwrite]
+                          [--default_ref_genome DEFAULT_REF_GENOME]
+                          [--run_test_mode] [--skip_sample_qc_filtering]
                           [--skip_variant_qc_filtering] [--skip_af_filtering]
                           [--af_max_threshold AF_MAX_THRESHOLD]
                           [--filter_biallelic] [--filter_protein_domain]
                           [--hets] [--homs] [--chets] [--homs_chets]
-                          [--write_to_file] [--overwrite]
-                          [--default_ref_genome DEFAULT_REF_GENOME]
-                          [--run_test_mode]
+                          [--test_cadd_miss] [--test_revel_miss]
+                          [--test_mvp_miss] [--test_pav_hc]
+                          [--cadd_threshold CADD_THRESHOLD]
+                          [--revel_threshold REVEL_THRESHOLD]
+                          [--mvp_threshold MVP_THRESHOLD]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -22,6 +26,14 @@ optional arguments:
                         One of <chd_ukbb> or <chd_ddd>
   -o OUTPUT_DIR, --output_dir OUTPUT_DIR
                         Path to output directory
+  --write_to_file       Write output to BGZ-compressed file
+  --overwrite           Overwrite pre-existing data
+  --default_ref_genome DEFAULT_REF_GENOME
+                        Default reference genome to start Hail
+  --run_test_mode       Run pipeline on smaller chunk of data (chr20) for
+                        testing propose
+
+Options for QC and filtering:
   --skip_sample_qc_filtering
                         Skip the sample QC filtering step
   --skip_variant_qc_filtering
@@ -33,18 +45,31 @@ optional arguments:
   --filter_protein_domain
                         Run burden test on variants within protein domain(s)
                         only
+
+Options to aggregate genotypes for burden testing:
   --hets                Aggregate hets genotypes to run the burden test
   --homs                Aggregate homs genotypes to run the burden test
   --chets               Aggregate compound hets genotypes to run the burden
                         test
   --homs_chets          Aggregate compound hets and/or homs genotypes to run
                         the burden test
-  --write_to_file       Write output to BGZ-compressed file
-  --overwrite           Overwrite pre-existing data
-  --default_ref_genome DEFAULT_REF_GENOME
-                        Default reference genome to start Hail
-  --run_test_mode       Run pipeline on smaller chunk of data (chr20) for
-                        testing propose
+
+Type of variant to be included in burden testing:
+  --test_cadd_miss      Test missense variants passing a predefined CADD score
+                        threshold
+  --test_revel_miss     Test missense variants passing a predefined REVEL
+                        score threshold
+  --test_mvp_miss       Test missense variants passing a predefined MVP score
+                        threshold
+  --test_pav_hc         Test high confidence protein-altering variants
+
+Pathogenic score threshold options:
+  --cadd_threshold CADD_THRESHOLD
+                        CADD score threshold
+  --revel_threshold REVEL_THRESHOLD
+                        REVEL score threshold
+  --mvp_threshold MVP_THRESHOLD
+                        MVP score threshold
 
 
 """
@@ -65,6 +90,7 @@ from utils.data_utils import (get_af_annotation_ht,
                               get_mt_data, get_vep_annotation_ht)
 from utils.expressions import (af_filter_expr,
                                bi_allelic_expr)
+from utils.filter import filter_ccr
 from utils.generic import current_date
 from utils.qc import (apply_sample_qc_filtering,
                       apply_variant_qc_filtering)
@@ -79,15 +105,15 @@ nfs_dir = 'file:///home/ubuntu/data'
 nfs_tmp = 'file:///home/ubuntu/data/tmp'
 hdfs_dir = 'hdfs://spark-master:9820/dir'
 
-# Deleterious scores cutoff
-MVP_THRESHOLD = 0.8
-REVEL_THRESHOLD = 0.5
-CADD_THRESHOLD = 25
-MPC_THRESHOLD = 2
-
 
 def main(args):
     hl.init(default_reference=args.default_ref_genome)
+
+    # Deleterious scores cutoff
+    mvp_threshold = args.mvp_threshold
+    revel_threshold = args.revel_threshold
+    cadd_threshold = args.cadd_threshold
+    # MPC_THRESHOLD = 2
 
     if args.run_test_mode:
         logger.info('Running pipeline on test data...')
@@ -107,7 +133,7 @@ def main(args):
 
         mt = apply_sample_qc_filtering(mt)
 
-        logger.info('Writing sample qc-filtered mt with rare variants (internal maf 0.01) to disk...')
+        logger.info('Writing sample qc-filtered MT to disk...')
         mt = (mt
               .write(f'{hdfs_dir}/chd_ukbb.sample_qc_filtered.mt',
                      overwrite=True)
@@ -126,7 +152,7 @@ def main(args):
         mt = apply_variant_qc_filtering(mt)
 
         # write hard filtered MT to disk
-        logger.info('Writing variant qc-filtered mt with rare variants (internal maf 0.01) to disk...')
+        logger.info('Writing variant qc-filtered MT to disk...')
         mt = (mt
               .write(f'{hdfs_dir}/chd_ukbb.variant_qc_filtered.mt',
                      overwrite=True)
@@ -204,6 +230,11 @@ def main(args):
             keep=True
         )
 
+    ## Filter to variants within CCRs
+    if args.filter_ccr:
+        logger.info('Running burden test on variants within CCRs...')
+        mt = filter_ccr(mt, ccr_pct=args.ccr_pct_cutoff)
+
     ## Add cases/controls sample annotations
     tb_sample = get_sample_meta_data()
     mt = (mt
@@ -219,21 +250,38 @@ def main(args):
     mt = mt.annotate_rows(**ht_scores[mt.row_key])
 
     ## Classify variant into (major) consequence groups
-    score_expr_ann = {'hcLOF': mt.LoF == 'HC',
+    score_expr_ann = {'lof': hl.set(['LC', 'HC']).contains(mt.LoF),
                       'syn': mt.Consequence == 'synonymous_variant',
-                      'miss': mt.Consequence == 'missense_variant'
+                      'miss': mt.Consequence == 'missense_variant',
+                      'hcLOF': mt.LoF == 'HC'
                       }
 
     # Update dict expr annotations with combinations of variant consequences categories
     score_expr_ann.update(
-        {'missC': (hl.sum([(mt['vep.MVP_score'] >= MVP_THRESHOLD),
-                           (mt['vep.REVEL_score'] >= REVEL_THRESHOLD),
-                           (mt['vep.CADD_PHRED'] >= CADD_THRESHOLD)]) >= 2) & score_expr_ann.get('miss')}
+        {'missC': (hl.sum([(mt['vep.MVP_score'] >= mvp_threshold),
+                           (mt['vep.REVEL_score'] >= revel_threshold),
+                           (mt['vep.CADD_PHRED'] >= cadd_threshold)]) >= 2) & score_expr_ann.get('miss')}
     )
 
-    score_expr_ann.update(
-        {'hcLOF_missC': score_expr_ann.get('hcLOF') | score_expr_ann.get('missC')}
-    )
+    if args.test_cadd_miss:
+        score_expr_ann.update(
+            {'cadd_miss': (mt['vep.CADD_PHRED'] >= cadd_threshold) & score_expr_ann.get('miss')}
+        )
+
+    if args.test_mvp_miss:
+        score_expr_ann.update(
+            {'mvp_miss': (mt['vep.MVP_score'] >= mvp_threshold) & score_expr_ann.get('miss')}
+        )
+
+    if args.test_revel_miss:
+        score_expr_ann.update(
+            {'revel_miss': (mt['vep.REVEL_score'] >= revel_threshold) & score_expr_ann.get('miss')}
+        )
+
+    if args.test_pav_hc:
+        score_expr_ann.update(
+            {'hcPAV': score_expr_ann.get('hcLOF') | score_expr_ann.get('missC')}
+        )
 
     mt = (mt
           .annotate_rows(csq_group=score_expr_ann)
@@ -396,36 +444,6 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--output_dir', help='Path to output directory',
                         type=str, default=f'{nfs_dir}/hail_data/burden')
 
-    parser.add_argument('--skip_sample_qc_filtering', help='Skip the sample QC filtering step',
-                        action='store_true')
-
-    parser.add_argument('--skip_variant_qc_filtering', help='Skip the variant QC filtering step',
-                        action='store_true')
-
-    parser.add_argument('--skip_af_filtering', help='Skip the allelic frequency filtering step',
-                        action='store_true')
-
-    parser.add_argument('--af_max_threshold', help='Allelic frequency cutoff to filter variants (max)',
-                        type=float, default=0.001)
-
-    parser.add_argument('--filter_biallelic', help='Run burden test on bi-allelic variants only',
-                        action='store_true')
-
-    parser.add_argument('--filter_protein_domain', help='Run burden test on variants within protein domain(s) only',
-                        action='store_true')
-
-    parser.add_argument('--hets', help='Aggregate hets genotypes to run the burden test',
-                        action='store_true')
-
-    parser.add_argument('--homs', help='Aggregate homs genotypes to run the burden test',
-                        action='store_true')
-
-    parser.add_argument('--chets', help='Aggregate compound hets genotypes to run the burden test',
-                        action='store_true')
-
-    parser.add_argument('--homs_chets', help='Aggregate compound hets and/or homs genotypes to run the burden test',
-                        action='store_true')
-
     parser.add_argument('--write_to_file', help='Write output to BGZ-compressed file',
                         action='store_true')
 
@@ -437,6 +455,79 @@ if __name__ == '__main__':
 
     parser.add_argument('--run_test_mode', help='Run pipeline on smaller chunk of data (chr20) for testing propose',
                         action='store_true')
+
+    # QC filtering option
+    qc_filtering_group = parser.add_argument_group('Options for QC and filtering')
+
+    qc_filtering_group.add_argument('--skip_sample_qc_filtering', help='Skip the sample QC filtering step',
+                                    action='store_true')
+
+    qc_filtering_group.add_argument('--skip_variant_qc_filtering', help='Skip the variant QC filtering step',
+                                    action='store_true')
+
+    qc_filtering_group.add_argument('--skip_af_filtering', help='Skip the allelic frequency filtering step',
+                                    action='store_true')
+
+    qc_filtering_group.add_argument('--af_max_threshold', help='Allelic frequency cutoff to filter variants (max)',
+                                    type=float, default=0.001)
+
+    qc_filtering_group.add_argument('--filter_biallelic', help='Run burden test on bi-allelic variants only',
+                                    action='store_true')
+
+    qc_filtering_group.add_argument('--filter_ccr',
+                                    help='Run burden test on variants within CCRs only',
+                                    action='store_true')
+
+    qc_filtering_group.add_argument('--ccr_pct_cutoff', help='CCRs percentile cutoff',
+                                    type=float, default=95.0)
+
+    qc_filtering_group.add_argument('--filter_protein_domain',
+                                    help='Run burden test on variants within protein domain(s) only',
+                                    action='store_true')
+
+    # Aggregate genotype options
+    agg_genotype_group = parser.add_argument_group('Options to aggregate genotypes for burden testing')
+
+    agg_genotype_group.add_argument('--hets', help='Aggregate hets genotypes to run the burden test',
+                                    action='store_true')
+
+    agg_genotype_group.add_argument('--homs', help='Aggregate homs genotypes to run the burden test',
+                                    action='store_true')
+
+    agg_genotype_group.add_argument('--chets', help='Aggregate compound hets genotypes to run the burden test',
+                                    action='store_true')
+
+    agg_genotype_group.add_argument('--homs_chets',
+                                    help='Aggregate compound hets and/or homs genotypes to run the burden test',
+                                    action='store_true')
+
+    # Type of variants for burden testing
+    variant_type_group = parser.add_argument_group('Type of variant to be included in burden testing')
+
+    variant_type_group.add_argument('--test_cadd_miss',
+                                    help='Test missense variants passing a predefined CADD score threshold',
+                                    action='store_true')
+
+    variant_type_group.add_argument('--test_revel_miss',
+                                    help='Test missense variants passing a predefined REVEL score threshold',
+                                    action='store_true')
+
+    variant_type_group.add_argument('--test_mvp_miss',
+                                    help='Test missense variants passing a predefined MVP score threshold',
+                                    action='store_true')
+
+    variant_type_group.add_argument('--test_pav_hc',
+                                    help='Test high confidence protein-altering variants',
+                                    action='store_true')
+
+    # Pathogenic score cutoff
+    score_cutoff_group = parser.add_argument_group('Pathogenic score threshold options')
+
+    score_cutoff_group.add_argument('--cadd_threshold', help='CADD score threshold', type=float, default=20.0)
+
+    score_cutoff_group.add_argument('--revel_threshold', help='REVEL score threshold', type=float, default=0.5)
+
+    score_cutoff_group.add_argument('--mvp_threshold', help='MVP score threshold', type=float, default=0.8)
 
     args = parser.parse_args()
 

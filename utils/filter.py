@@ -12,7 +12,8 @@ from utils.reference_data import (get_lcr_ht,
                                   get_telomeres_and_centromeres_ht,
                                   import_cds_intervals_from_gtf)
 
-from utils.data_utils import get_capture_interval_ht
+from utils.data_utils import (get_capture_interval_ht,
+                              get_ccr_ht)
 
 import functools
 import operator
@@ -175,4 +176,23 @@ def filter_capture_intervals(t: Union[hl.Table, hl.MatrixTable],
         else:
             t = t.filter(filter_criteria)
 
+    return t
+
+
+def filter_ccr(t: Union[hl.Table, hl.MatrixTable],
+               ccr_pct: float = 90.0) -> Union[hl.Table, hl.MatrixTable]:
+    """
+    Keep sites defined in coding-constraint regions (CCRs) at certain percentile.
+
+    :param t:  MatrixTable or Table to filter
+    :param ccr_pct:
+    :return:  MatrixTable or Table
+    """
+    ccr_ht = get_ccr_ht()
+    ccr_ht = ccr_ht.filter(ccr_ht.ccr_pct >= ccr_pct)
+
+    if isinstance(t, hl.MatrixTable):
+        t = t.filter_rows(hl.is_defined(ccr_ht[t.locus]))
+    else:
+        t = t.filter(hl.is_defined(ccr_ht[t.locus]))
     return t

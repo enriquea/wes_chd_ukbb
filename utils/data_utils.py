@@ -171,6 +171,7 @@ def get_variant_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None, split=Tr
     qc_parts = ['vep_vqsr',
                 'hard_filters',
                 'rf_result',
+                'coverage_stats',
                 'final_qc']
 
     if part not in qc_parts:
@@ -178,6 +179,12 @@ def get_variant_qc_ht_path(dataset: str = 'chd_ukbb', part: str = None, split=Tr
 
     split = '.split' if split else ''
     return f'{nfs_dir}/hail_data/variant_qc/{dataset}.variant_qc.{part}{split}.ht'
+
+
+def get_variant_af_pops_ht_path(dataset: str = 'chd_ukbb',
+                                split=True) -> str:
+    split = '.split' if split else ''
+    return f'{nfs_dir}/hail_data/variant_qc/{dataset}.af_pops{split}.ht'
 
 
 def get_vep_vqsr_vcf_path() -> str:
@@ -201,6 +208,17 @@ def get_vep_scores_ht() -> hl.Table:
     return hl.read_table(
         f'{nfs_dir}/hail_data/scores/chd_ukbb.pathogenic_scores.vep.split.ht'
     ).key_by('locus', 'alleles')
+
+
+def get_ccr_ht() -> hl.Table:
+    """
+    Return HT with coding-constraint regions (CCRs) and percentile lifted over hg38
+
+    :return: HailTable
+    """
+    return hl.read_table(
+        f"{nfs_dir}/resources/ccr/ccr_hg38.ht"
+    )
 
 
 ##### gnomad resources #####
