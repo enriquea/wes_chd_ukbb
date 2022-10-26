@@ -363,7 +363,7 @@ def main(args):
     # Generate table of counts
     tb_gene = (
         mt_grouped
-            .annotate_rows(
+        .annotate_rows(
             n_cases=hl.agg.filter(mt_grouped['phe.is_case'], hl.agg.sum(mt_grouped.mac)),
             n_syndromic=hl.agg.filter(mt_grouped['phe.is_syndromic'], hl.agg.sum(mt_grouped.mac)),
             n_nonsyndromic=hl.agg.filter(mt_grouped['phe.is_nonsyndromic'], hl.agg.sum(mt_grouped.mac)),
@@ -372,7 +372,7 @@ def main(args):
             n_total_syndromic=hl.agg.filter(mt_grouped['phe.is_syndromic'], hl.agg.count()),
             n_total_nonsyndromic=hl.agg.filter(mt_grouped['phe.is_nonsyndromic'], hl.agg.count()),
             n_total_controls=hl.agg.filter(mt_grouped['phe.is_control'], hl.agg.count()))
-            .rows()
+        .rows()
     )
 
     # run fet stratified by proband type

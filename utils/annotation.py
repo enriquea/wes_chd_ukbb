@@ -35,7 +35,7 @@ def annotate_variant_id(t: Union[hl.Table, hl.MatrixTable],
                         field_name: str = 'vid') -> Union[hl.Table, hl.MatrixTable]:
     """
     Expected input dataset with bi-allelic variant, and fields `locus` and `alleles`.
-    Annotate variant ids as follow 'chr:position:ref:alt'.
+    Annotate variant ids as follows 'chr:position:ref:alt'.
 
     :param field_name: variant id field name
     :param t: dataset
@@ -54,3 +54,22 @@ def annotate_variant_id(t: Union[hl.Table, hl.MatrixTable],
         return t.annotate(**variant_id_ann_exp)
     else:
         return t.annotate_rows(**variant_id_ann_exp)
+
+
+def annotate_sample_blind_id(t: hl.Table,
+                             field_name: str = 'biid'):
+
+    """
+    Add generic unique IDs to rows (e.g., non-duplicated samples) in input Table.
+
+    :param t: Table
+    :param field_name: Output field name
+
+    :return: Hail Table
+    """
+
+    t = t.add_index()
+    ann_expr = {field_name: 'BIID_' + hl.str(t.idx + 1_000_000)}
+    t = t.annotate(**ann_expr).drop('idx')
+
+    return t

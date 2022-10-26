@@ -139,7 +139,12 @@ def filter_low_conf_regions(
 
 
 def filter_capture_intervals(t: Union[hl.Table, hl.MatrixTable],
-                             capture_intervals: tuple = ('ssv2', 'ssv3', 'ssv4', 'ssv5_idt_intersect'),
+                             capture_intervals: list = ['ssv2',
+                                                        'ssv3',
+                                                        'ssv4',
+                                                        'ssv5',
+                                                        'idt_xgen',
+                                                        'ssv5_idt_intersect'],
                              reference: str = "GRCh38") -> Union[hl.Table, hl.MatrixTable]:
     """
     Filter sites defined in capture intervals. Sites are kept if they are defined in all input captures intervals.
@@ -153,7 +158,7 @@ def filter_capture_intervals(t: Union[hl.Table, hl.MatrixTable],
     """
 
     # evaluate if input capture interval names are valid...
-    defined_captures_interval = ('ssv2', 'ssv3', 'ssv4', 'ssv5_idt_intersect')
+    defined_captures_interval = ('ssv2', 'ssv3', 'ssv4', 'ssv5', 'idt_xgen', 'ssv5_idt_intersect')
     if any([x not in defined_captures_interval for x in capture_intervals]):
         raise ValueError(
             f"Invalid input capture interval name(s). Expected capture interval(s): {defined_captures_interval}"

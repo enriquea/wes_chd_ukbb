@@ -122,30 +122,30 @@ def main(args):
                     .default(False)
                     )
           )
-    
+
     # 5. Apply coverage/capture interval filters
-    
+
     ## gnomad genome coverage
     gnomad_coverage_ht = get_gnomad_genomes_coverage_ht().key_by()
     gnomad_coverage_ht = (gnomad_coverage_ht
                           .annotate(locus=hl.parse_locus(gnomad_coverage_ht.locus, reference_genome='GRCh38'))
                           .key_by('locus')
-                         )
+                          )
     ht = (ht
-         .annotate(gnomad_cov_10X=gnomad_coverage_ht[ht.locus].over_10)
-         )
+          .annotate(gnomad_cov_10X=gnomad_coverage_ht[ht.locus].over_10)
+          )
     ht = (ht
-         .annotate(is_coveraged_gnomad_genomes = ht.gnomad_cov_10X >= 0.9)
-         )
-    
+          .annotate(is_coveraged_gnomad_genomes=ht.gnomad_cov_10X >= 0.9)
+          )
+
     ## defined in capture intervals
 
     # filter to capture intervals (intersect)
-    ht_defined_intervals = filter_capture_intervals(ht)
+    ht_defined_intervals = filter_capture_intervals(ht,
+                                                    capture_intervals=['ssv5_idt_intersect'])
     ht = (ht
-         .annotate(is_defined_capture_intervals = hl.is_defined(ht_defined_intervals[ht.key]))
-         )
-    
+          .annotate(is_defined_capture_intervals=hl.is_defined(ht_defined_intervals[ht.key]))
+          )
 
     # 6. Summary final variant QC
 
