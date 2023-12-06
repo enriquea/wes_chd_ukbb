@@ -58,7 +58,6 @@ def annotate_variant_id(t: Union[hl.Table, hl.MatrixTable],
 
 def annotate_sample_blind_id(t: hl.Table,
                              field_name: str = 'biid'):
-
     """
     Add generic unique IDs to rows (e.g., non-duplicated samples) in input Table.
 
@@ -71,5 +70,64 @@ def annotate_sample_blind_id(t: hl.Table,
     t = t.add_index()
     ann_expr = {field_name: 'BIID_' + hl.str(t.idx + 1_000_000)}
     t = t.annotate(**ann_expr).drop('idx')
+
+    return t
+
+
+def annotate_af(t: Union[hl.Table, hl.MatrixTable],
+                field_name: str = 'AF') -> Union[hl.Table, hl.MatrixTable]:
+    """
+    Annotate AF field in Table or MatrixTable.
+
+    :param t: Table or MatrixTable
+    :param field_name: Output field name
+    :return: Table or MatrixTable
+    """
+    if isinstance(t, hl.MatrixTable):
+        t = t.annotate_rows(**{field_name: hl.agg.mean(t.GT.n_alt_alleles())})
+    else:
+        t = t.annotate(**{field_name: hl.agg.mean(t.GT.n_alt_alleles())})
+
+    return t
+
+
+def annotate_platform(t: Union[hl.Table, hl.MatrixTable],
+                      field_name: str = 'platform') -> Union[hl.Table, hl.MatrixTable]:
+    """
+    Annotate platform field in Table or MatrixTable.
+
+    :param t: Table or MatrixTable
+    :param field_name: Output field name
+    :return: Table or MatrixTable
+    """
+    if isinstance(t, hl.MatrixTable):
+        t = t.annotate_cols(**{field_name: hl.if_else(hl.is_defined(t.platform),
+                                                      t.platform,
+                                                      'unknown')})
+    else:
+        t = t.annotate(**{field_name: hl.if_else(hl.is_defined(t.platform),
+                                                 t.platform,
+                                                 'unknown')})
+
+    return t
+
+
+def annotate_ancestry(t: Union[hl.Table, hl.MatrixTable],
+                      field_name: str = 'ancestry') -> Union[hl.Table, hl.MatrixTable]:
+    """
+    Annotate ancestry field in Table or MatrixTable.
+
+    :param t: Table or MatrixTable
+    :param field_name: Output field name
+    :return: Table or MatrixTable
+    """
+    if isinstance(t, hl.MatrixTable):
+        t = t.annotate_cols(**{field_name: hl.if_else(hl.is_defined(t.ancestry),
+                                                      t.ancestry,
+                                                      'unknown')})
+    else:
+        t = t.annotate(**{field_name: hl.if_else(hl.is_defined(t.ancestry),
+                                                 t.ancestry,
+                                                 'unknown')})
 
     return t
