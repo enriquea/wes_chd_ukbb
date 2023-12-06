@@ -90,10 +90,10 @@ def main(args):
              )
 
     # export table
-    ht_cs = (ht_cs
-             .checkpoint(get_variant_af_pops_ht_path(dataset=ds),
-                         overwrite=args.overwrite)
-             )
+    (ht_cs
+     .checkpoint(get_variant_af_pops_ht_path(dataset=ds),
+                 overwrite=args.overwrite)
+     )
 
     # Stop Hail
     hl.stop()
