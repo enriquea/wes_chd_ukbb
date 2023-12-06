@@ -204,3 +204,4 @@ fabric.properties
 /tmp
 /submit-scripts
 /local_config_shell
+/.idea
