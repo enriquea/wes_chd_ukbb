@@ -48,9 +48,7 @@ logger.setLevel(logging.INFO)
 nfs_dir = 'file:///home/ubuntu/data'
 
 INBREEDING_COEFFICIENT_CUTOFF = -0.3
-
-RF_PROBABILITY_SNV_CUTOFF = 0.2  # this cutoff could be lower for SNVs (0.1?)
-
+RF_PROBABILITY_SNV_CUTOFF = 0.2  # TODO: this cutoff could be lower for SNVs (0.1?)
 RF_PROBABILITY_INDEL_CUTOFF = 0.2
 
 
