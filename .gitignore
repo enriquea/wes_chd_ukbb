@@ -203,3 +203,4 @@ fabric.properties
 /notebooks
 /tmp
 /submit-scripts
+/local_config_shell
