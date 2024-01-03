@@ -1,10 +1,12 @@
 # wes_chd_ukbb
 
 
-## Meta-analysis of large-scale wes dataset using Hail
+## Meta-analysis of a large-scale wes dataset using Hail
 
-This repository contains a series of pipelines (mostly command-line tools) to analyse large-scale 
-case-control exome sequencing cohort (~57,000 exomes).
+This repository contains a series of pipelines (mostly command-line tools) to analyse the 
+CHD case-control exome cohort linked to the manuscript: 
+*"Assessing the contribution of rare variants to congenital heart disease through 
+a large-scale case-control exome study"* ([medRxiv link](https://doi.org/10.1101/2023.12.23.23300495)) .
 
 
 Most pipelines were adapted from the gnomad repository [1]. Pipelines were built using the python-like library
