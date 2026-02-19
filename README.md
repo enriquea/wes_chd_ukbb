@@ -1,5 +1,38 @@
 # wes_chd_ukbb
 
+## Setup
+
+### Prerequisites
+- Linux (Ubuntu 20.04+ recommended)
+- [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or Python 3.9 + pip
+- Java 11 on `PATH` (required by Hail/Spark)
+- A running Spark standalone cluster or use Hail in local mode
+
+### Install with conda (recommended)
+```bash
+conda env create -f environment.yml
+conda activate wes_chd_ukbb
+```
+
+### Install with pip
+```bash
+pip install -r requirements.txt
+```
+
+> **Note:** `pyspark` is not listed in the requirements — Hail bundles a compatible Spark version. Installing a separate `pyspark` causes classpath conflicts.
+
+### Run a script
+Scripts are run as Python modules from the repository root:
+```bash
+python -m sample_qc.apply_hard_filters
+```
+
+### Path configuration
+Before running, update the two path prefixes in `utils/data_utils.py`:
+- `nfs_dir` — root of your local data mount (default: `file:///home/ubuntu/data`)
+- `hdfs_dir` / `hdfs_checkpoint_dir` — HDFS or local output paths (default: `hdfs://spark-master:9820/...`)
+
+---
 
 ## Meta-analysis of a large-scale wes dataset using Hail
 
