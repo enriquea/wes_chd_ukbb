@@ -17,9 +17,11 @@ zcat *.gz | bgzip -c > dbNSFP4.1a_variant.bgz
 import hail as hl
 import os
 
+from utils.config import NFS_DIR
+
 hl.init(default_reference='GRCh38')
 
-nfs_dir = 'file:///home/ubuntu/data'
+nfs_dir = NFS_DIR
 
 path_file_in = f'{nfs_dir}/resources/dbNSFP/variants/dbNSFP4.1a_variant.bgz'
 path_ht_out = f'{os.path.splitext(path_file_in)[0]}.ht'

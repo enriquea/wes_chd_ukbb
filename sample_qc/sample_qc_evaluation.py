@@ -45,12 +45,14 @@ from utils.filter import (filter_low_conf_regions,
 from utils.data_utils import (get_sample_qc_ht_path,
                               get_mt_data)
 
+from utils.config import NFS_DIR
+
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger("Sample QC")
 logger.setLevel(logging.INFO)
 
-# hdfs_dir = 'hdfs://spark-master:9820'
-nfs_dir = 'file:///home/ubuntu/data'
+# hdfs_dir = HDFS_DIR  # set via WES_HDFS_DIR env var
+nfs_dir = NFS_DIR
 
 
 def merge_sample_qc_expr(

@@ -3,8 +3,9 @@
 
 import hail as hl
 
+from utils.config import NFS_DIR
 
-nfs_dir = 'file:///home/ubuntu/data'
+nfs_dir = NFS_DIR
 
 
 def get_lcr_ht(overwrite: bool = False) -> hl.Table:

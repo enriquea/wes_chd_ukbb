@@ -49,12 +49,14 @@ import hail as hl
 from utils.data_utils import (get_sample_meta_data,
                               import_fam_ht)
 
+from utils.config import NFS_DIR, HDFS_DIR
+
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger("relatedness_inference")
 logger.setLevel(logging.INFO)
 
-hdfs_dir = 'hdfs://spark-master:9820'
-nfs_dir = 'file:///home/ubuntu/data'
+hdfs_dir = HDFS_DIR
+nfs_dir = NFS_DIR
 
 MIN_KINSHIP = 0.125
 

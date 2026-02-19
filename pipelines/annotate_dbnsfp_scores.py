@@ -43,7 +43,9 @@ import argparse
 
 import hail as hl
 
-nfs_dir = 'file:///home/ubuntu/data'
+from utils.config import NFS_DIR
+
+nfs_dir = NFS_DIR
 
 
 def load_and_join_score_fields(ht_variants_path, ht_dbnsfp_path, transcript_field):

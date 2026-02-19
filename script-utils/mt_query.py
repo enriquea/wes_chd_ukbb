@@ -54,13 +54,15 @@ from utils.data_utils import (get_af_annotation_ht,
 from utils.expressions import (af_filter_expr,
                                bi_allelic_expr)
 
+from utils.config import NFS_DIR, HDFS_DIR
+
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger("Burden testing pipeline")
 logger.setLevel(logging.INFO)
 
-nfs_dir = 'file:///home/ubuntu/data'
-nfs_tmp = 'file:///home/ubuntu/data/tmp'
-hdfs_dir = 'hdfs://spark-master:9820/dir'
+nfs_dir = NFS_DIR
+nfs_tmp = f'{NFS_DIR}/tmp'
+hdfs_dir = f'{HDFS_DIR}/dir'
 project_dir = f'{nfs_dir}/projects/wes_chd_ukbb'
 
 

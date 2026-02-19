@@ -38,14 +38,16 @@ from utils.data_utils import (get_qc_mt_path,
 
 from utils.filter import (filter_capture_intervals)
 
+from utils.config import NFS_DIR
+
 # from utils.constants import *
 
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# hdfs_dir = 'hdfs://spark-master:9820'
-nfs_dir = 'file:///home/ubuntu/data'
+# hdfs_dir = HDFS_DIR  # set via WES_HDFS_DIR env var
+nfs_dir = NFS_DIR
 
 INBREEDING_COEFFICIENT_CUTOFF = -0.3
 RF_PROBABILITY_SNV_CUTOFF = 0.2  # TODO: this cutoff could be lower for SNVs (0.1?)

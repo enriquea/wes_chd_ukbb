@@ -18,13 +18,15 @@ from utils.data_utils import (get_mt_data,
                               get_qc_mt_path,
                               get_variant_af_pops_ht_path)
 
+from utils.config import NFS_DIR, HDFS_DIR
+
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger("Annotate AF")
 logger.setLevel(logging.INFO)
 
-nfs_dir = 'file:///home/ubuntu/data'
-nfs_tmp = 'file:///home/ubuntu/data/tmp'
-hdfs_dir = 'hdfs://spark-master:9820/dir'
+nfs_dir = NFS_DIR
+nfs_tmp = f'{NFS_DIR}/tmp'
+hdfs_dir = f'{HDFS_DIR}/dir'
 
 
 def annotate_release_samples(ht: hl.Table):

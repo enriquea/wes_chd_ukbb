@@ -9,6 +9,8 @@ from typing import List, Optional, Union
 
 import hail as hl
 
+from utils.config import NFS_DIR
+
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
     datefmt="%m/%d/%Y %I:%M:%S %p",
@@ -98,13 +100,13 @@ def add_reference_sequence(ref: hl.ReferenceGenome) -> hl.ReferenceGenome:
     if not ref.has_sequence():
         if ref.name == "GRCh38":
             ref.add_sequence(
-                "file:///home/ubuntu/data/resources/hail-common/references/Homo_sapiens_assembly38.fasta.gz",
-                "file:///home/ubuntu/data/resources/hail-common/references/Homo_sapiens_assembly38.fasta.fai",
+                f"{NFS_DIR}/resources/hail-common/references/Homo_sapiens_assembly38.fasta.gz",
+                f"{NFS_DIR}/resources/hail-common/references/Homo_sapiens_assembly38.fasta.fai",
             )
         elif ref.name == "GRCh37":
             ref.add_sequence(
-                "file:///home/ubuntu/data/resources/hail-common/references/human_g1k_v37.fasta.gz",
-                "file:///home/ubuntu/data/resources/hail-common/references/human_g1k_v37.fasta.fai",
+                f"{NFS_DIR}/resources/hail-common/references/human_g1k_v37.fasta.gz",
+                f"{NFS_DIR}/resources/hail-common/references/human_g1k_v37.fasta.fai",
             )
         else:
             raise NotImplementedError(

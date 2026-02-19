@@ -38,6 +38,8 @@ from gnomad.variant_qc.random_forest import (
     save_model,
 )
 
+from utils.config import NFS_DIR, HDFS_DIR
+
 
 os.environ['PYSPARK_PYTHON'] = sys.executable
 
@@ -72,10 +74,10 @@ FEATURES = [
 TRUTH_DATA = ["hapmap", "omni", "mills", "kgp_phase1_hc"]
 INBREEDING_COEFF_HARD_CUTOFF = -0.3
 
-tmp_dir = 'hdfs://spark-master:9820/tmp'
-nfs_dir = 'file:///home/ubuntu/data'
-hdfs_dir = 'hdfs://spark-master:9820/dir/hail_data'
-project_dir = '/home/ubuntu/data/projects/wes_chd_ukbb/'
+tmp_dir = f'{HDFS_DIR}/tmp'
+nfs_dir = NFS_DIR
+hdfs_dir = f'{HDFS_DIR}/dir/hail_data'
+project_dir = f'{NFS_DIR}/projects/wes_chd_ukbb'
 
 
 def get_rf(

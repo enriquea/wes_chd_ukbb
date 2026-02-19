@@ -5,9 +5,11 @@ Set of functions to handle import/export of sample metadata, MT, intervals and r
 
 import hail as hl
 
-nfs_dir = 'file:///home/ubuntu/data'
-hdfs_dir = 'hdfs://spark-master:9820/dir/hail_data'
-hdfs_checkpoint_dir = 'hdfs://spark-master:9820/checkpoint'
+from utils.config import NFS_DIR, HDFS_DIR
+
+nfs_dir = NFS_DIR
+hdfs_dir = f'{HDFS_DIR}/dir/hail_data'
+hdfs_checkpoint_dir = f'{HDFS_DIR}/checkpoint'
 
 
 ##### MatrixTable utils #####
