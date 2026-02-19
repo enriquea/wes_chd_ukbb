@@ -115,25 +115,25 @@ def generate_clusters_map(ht: hl.Table) -> hl.Table:
     return clusters
 
 
-def main(args):
-    hl.init(default_reference=args.default_ref_genome)
-
-    if args.run_test_mode:
+def load_mt(run_test_mode, exome_cohort):
+    """Load raw (test mode: chr20 sample) or adjusted-genotype MatrixTable."""
+    if run_test_mode:
         logger.info('Running pipeline on test data...')
         mt = (get_mt_data(part='raw_chr20')
               .sample_rows(0.1)
               )
     else:
         logger.info('Running pipeline on MatrixTable wih adjusted genotypes...')
-        ds = args.exome_cohort
-        mt = hl.read_matrix_table(get_qc_mt_path(dataset=ds,
+        mt = hl.read_matrix_table(get_qc_mt_path(dataset=exome_cohort,
                                                  part='unphase_adj_genotypes',
                                                  split=True))
+    return mt
 
-    # 1. Sample-QC filtering
-    if not args.skip_sample_qc_filtering:
+
+def apply_qc_filters(mt, skip_sample_qc, skip_variant_qc, skip_af_filtering, maf_cutoff):
+    """Apply sample QC, variant QC, and AF filters, checkpointing between steps."""
+    if not skip_sample_qc:
         logger.info('Applying per sample QC filtering...')
-
         mt = apply_sample_qc_filtering(mt)
 
         logger.info('Writing sample qc-filtered mt with rare variants (internal maf 0.01) to disk...')
@@ -142,9 +142,7 @@ def main(args):
                      overwrite=True)
               )
 
-    # 2. Variant-QC filtering
-    if not args.skip_variant_qc_filtering:
-
+    if not skip_variant_qc:
         logger.info('Applying per variant QC filtering...')
 
         if hl.hadoop_is_file(f'{hdfs_dir}/chd_ukbb.sample_qc_filtered.mt/_SUCCESS'):
@@ -154,30 +152,20 @@ def main(args):
             )
         mt = apply_variant_qc_filtering(mt)
 
-        # write hard filtered MT to disk
         logger.info('Writing variant qc-filtered mt with rare variants (internal maf 0.01) to disk...')
         mt = (mt
               .write(f'{hdfs_dir}/chd_ukbb.variant_qc_filtered.mt',
                      overwrite=True)
               )
 
-    # 3. Annotate AFs
-
-    # allelic frequency cut-off
-    maf_cutoff = args.af_max_threshold
-
-    if not args.skip_af_filtering:
-
+    if not skip_af_filtering:
         if hl.hadoop_is_file(f'{hdfs_dir}/chd_ukbb.variant_qc_filtered.mt/_SUCCESS'):
             logger.info('Reading pre-existing sample/variant qc-filtered MT...')
             mt = hl.read_matrix_table(
                 f'{hdfs_dir}/chd_ukbb.variant_qc_filtered.mt'
             )
 
-        # Annotate allelic frequencies from external source,
-        # and compute internal AF on samples passing QC
         af_ht = get_af_annotation_ht()
-
         mt = (mt
               .annotate_rows(**af_ht[mt.row_key])
               )
@@ -194,56 +182,63 @@ def main(args):
               .filter_rows(functools.reduce(operator.iand, filter_expressions), keep=True)
               )
 
-        logger.info(f'Writing sample/variant QCed MT with rare variants at maf: {args.af_max_threshold}.')
+        logger.info(f'Writing sample/variant QCed MT with rare variants at maf: {maf_cutoff}.')
         mt = (mt
               .write(f'{hdfs_dir}/chd_ukbb.qc_final.rare.mt',
                      overwrite=True)
               )
 
-    # 4. ##### Run gene-set burden logistic regression ######
+    return mt
 
-    logger.info('Running gene-set burden logistic regression test...')
 
+def annotate_vep_fields(mt):
+    """Load the VEP annotation table and annotate LoF, Consequence, DOMAINS, SYMBOL onto rows."""
     if hl.hadoop_is_file(f'{hdfs_dir}/chd_ukbb.qc_final.rare.mt/_SUCCESS'):
         logger.info('Reading pre-existing sample/variant qc-filtered MT with rare variants...')
         mt = hl.read_matrix_table(
             f'{hdfs_dir}/chd_ukbb.qc_final.rare.mt'
         )
 
-    ## Add VEP-annotated fields
     vep_ht = get_vep_annotation_ht()
-
     mt = (mt
           .annotate_rows(LoF=vep_ht[mt.row_key].vep.LoF,
                          Consequence=vep_ht[mt.row_key].vep.Consequence,
                          DOMAINS=vep_ht[mt.row_key].vep.DOMAINS,
                          SYMBOL=vep_ht[mt.row_key].vep.SYMBOL)
           )
+    return mt
 
-    ## Filter to bi-allelic variants
-    if args.filter_biallelic:
+
+def apply_variant_filters(mt, filter_biallelic, filter_protein_domain):
+    """Optionally filter to bi-allelic variants or protein-domain variants."""
+    if filter_biallelic:
         logger.info('Running burden test on biallelic variants...')
         mt = mt.filter_rows(bi_allelic_expr(mt))
 
-    ## Filter to variants within protein domain(s)
-    if args.filter_protein_domain:
+    if filter_protein_domain:
         logger.info('Running burden test on variants within protein domain(s)...')
         mt = mt.filter_rows(
             vep_protein_domain_filter_expr(mt.DOMAINS),
             keep=True
         )
 
-    ## Annotate pathogenic scores
+    return mt
+
+
+def annotate_pathogenic_scores(mt):
+    """Annotate rows with pathogenic/deleteriousness scores from the VEP scores table."""
     ht_scores = get_vep_scores_ht()
     mt = mt.annotate_rows(**ht_scores[mt.row_key])
+    return mt
 
-    ## Classify variant into (major) consequence groups
+
+def build_consequence_groups(mt):
+    """Build fixed consequence-group boolean expressions and explode rows by group."""
     score_expr_ann = {'hcLOF': mt.LoF == 'HC',
                       'syn': mt.Consequence == 'synonymous_variant',
                       'miss': mt.Consequence == 'missense_variant'
                       }
 
-    # Update dict expr annotations with combinations of variant consequences categories
     score_expr_ann.update(
         {'missC': (hl.sum([(mt['vep.MVP_score'] >= MVP_THRESHOLD),
                            (mt['vep.REVEL_score'] >= REVEL_THRESHOLD),
@@ -258,8 +253,6 @@ def main(args):
           .annotate_rows(csq_group=score_expr_ann)
           )
 
-    # Transmute csq_group and convert dict to set where the group is defined
-    # (easier to explode and grouping later)
     mt = (mt
           .transmute_rows(csq_group=hl.set(hl.filter(lambda x:
                                                      mt.csq_group.get(x),
@@ -270,18 +263,15 @@ def main(args):
           .filter_rows(hl.len(mt.csq_group) > 0)
           )
 
-    # Explode nested csq_group and gene clusters before grouping
     mt = (mt
           .explode_rows(mt.csq_group)
           )
 
-    # First-step aggregation:
-    # Generate a sample per gene/variant_type (binary) matrix aggregating genotypes as follow:
-    #
-    #   a) entry: hets
-    #   b) entry: homs
-    #   c) entry: chets (compound hets)
+    return mt
 
+
+def aggregate_gene_level(mt):
+    """First-stage aggregation: group by gene/csq_group and aggregate hets, homs, chets."""
     mt_grouped = (mt
                   .group_rows_by(mt['SYMBOL'], mt['csq_group'])
                   .aggregate(hets=hl.agg.any(mt.GT.is_het()),
@@ -290,9 +280,12 @@ def main(args):
                   .repartition(100)
                   .persist()
                   )
+    return mt_grouped
 
-    # Import/generate gene clusters
-    clusters = hl.import_table(args.set_file,
+
+def annotate_gene_sets(mt_grouped, set_file):
+    """Import gene-set clusters, annotate rows, explode by cluster_id, and filter defined entries."""
+    clusters = hl.import_table(set_file,
                                no_header=True,
                                delimiter="\t",
                                min_partitions=50,
@@ -300,33 +293,27 @@ def main(args):
                                )
     clusters = generate_clusters_map(clusters)
 
-    # Annotate gene-set info
     mt_grouped = (mt_grouped
                   .annotate_rows(**clusters[mt_grouped.SYMBOL])
                   )
 
-    # Explode nested csq_group before grouping
     mt_grouped = (mt_grouped
                   .explode_rows(mt_grouped.cluster_id)
                   )
 
-    # filter rows with defined consequence and gene-set name
     mt_grouped = (mt_grouped
                   .filter_rows(hl.is_defined(mt_grouped.csq_group) &
                                hl.is_defined(mt_grouped.cluster_id))
                   )
 
-    # 2. Second-step aggregation
-    # Generate a sample per gene-sets/variant type matrix aggregating genotypes as follow:
-    # if dominant -> sum hets (default)
-    # if recessive -> sum (homs)
-    # if recessive (a) -> sum (chets)
-    # if recessive (b) -> sum (chets and/or homs)
+    return mt_grouped
 
+
+def aggregate_by_genotype_mode(mt_grouped, hets, homs, chets, homs_chets):
+    """Second-stage aggregation: group by gene-set/csq_group and union selected genotype modes."""
     mts = []
 
-    if args.homs:
-        # Group mt by gene-sets/csq_group aggregating homs genotypes.
+    if homs:
         mt_homs = (mt_grouped
                    .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
                    .aggregate(mac=hl.int(hl.agg.sum(mt_grouped.homs)))
@@ -334,11 +321,9 @@ def main(args):
                    .persist()
                    .annotate_rows(agg_genotype='homs')
                    )
-
         mts.append(mt_homs)
 
-    if args.chets:
-        # Group mt by gene-sets/csq_group aggregating compound hets (chets) genotypes.
+    if chets:
         mt_chets = (mt_grouped
                     .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
                     .aggregate(mac=hl.int(hl.agg.sum(mt_grouped.chets)))
@@ -346,11 +331,9 @@ def main(args):
                     .persist()
                     .annotate_rows(agg_genotype='chets')
                     )
-
         mts.append(mt_chets)
 
-    if args.homs_chets:
-        # Group mt by gene-sets/csq_group aggregating chets and/or homs genotypes.
+    if homs_chets:
         mt_homs_chets = (mt_grouped
                          .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
                          .aggregate(mac=hl.int(hl.agg.count_where(mt_grouped.chets | mt_grouped.homs)))
@@ -358,11 +341,9 @@ def main(args):
                          .persist()
                          .annotate_rows(agg_genotype='homs_chets')
                          )
-
         mts.append(mt_homs_chets)
 
-    if args.hets:
-        # Group mt by gene-sets/csq_group aggregating hets genotypes (default)
+    if hets:
         mt_hets = (mt_grouped
                    .group_rows_by(mt_grouped.csq_group, mt_grouped.cluster_id)
                    .aggregate(mac=hl.int(hl.agg.sum(mt_grouped.hets)))
@@ -370,14 +351,14 @@ def main(args):
                    .persist()
                    .annotate_rows(agg_genotype='hets')
                    )
-
         mts.append(mt_hets)
 
-    ## Joint MatrixTables
     mt_joint = hl.MatrixTable.union_rows(*mts)
+    return mt_joint
 
-    ## Add samples annotations
-    # annotate sample covs
+
+def annotate_sample_covariates(mt_joint):
+    """Annotate sample columns with covariates and case/control metadata, filter to cases/controls."""
     covariates = hl.read_table(
         f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.sample_covariates.ht'
     )
@@ -385,7 +366,6 @@ def main(args):
                 .annotate_cols(**covariates[mt_joint.s])
                 )
 
-    # annotate case/control phenotype info
     tb_sample = get_sample_meta_data()
     mt_joint = (mt_joint
                 .annotate_cols(**tb_sample[mt_joint.s])
@@ -395,11 +375,13 @@ def main(args):
                 .filter_cols(mt_joint['phe.is_case'] | mt_joint['phe.is_control'])
                 )
 
-    ## Run logistic regression stratified by proband type
+    return mt_joint
+
+
+def run_logreg_stratified(mt_joint, maf_cutoff):
+    """Run logistic regression stratified by proband type (all_cases, syndromic, nonsyndromic)."""
     analysis = ['all_cases', 'syndromic', 'nonsyndromic']
-
     tbs = []
-
     covs = ['sex', 'PC1', 'PC2', 'PC3', 'PC4', 'PC5']
 
     for proband in analysis:
@@ -426,21 +408,59 @@ def main(args):
         tbs.append(tb_logreg)
 
     tb_final = hl.Table.union(*tbs)
+    return tb_final
 
-    # export results
+
+def export_results(tb, output_dir, exome_cohort, write_to_file):
+    """Checkpoint results table and optionally export as TSV."""
     date = current_date()
     run_hash = str(uuid.uuid4())[:6]
-    output_path = f'{args.output_dir}/{date}/{args.exome_cohort}.logreg_burden.{run_hash}.ht'
+    output_path = f'{output_dir}/{date}/{exome_cohort}.logreg_burden.{run_hash}.ht'
 
-    tb_final = (tb_final
-                .checkpoint(output=output_path)
-                )
+    tb = (tb
+          .checkpoint(output=output_path)
+          )
 
-    if args.write_to_file:
-        # write table to disk as TSV file
-        (tb_final
+    if write_to_file:
+        (tb
          .export(f'{output_path}.tsv')
          )
+
+    return tb
+
+
+def main(args):
+    hl.init(default_reference=args.default_ref_genome)
+
+    maf_cutoff = args.af_max_threshold
+
+    mt = load_mt(args.run_test_mode, args.exome_cohort)
+
+    mt = apply_qc_filters(mt,
+                          args.skip_sample_qc_filtering,
+                          args.skip_variant_qc_filtering,
+                          args.skip_af_filtering,
+                          maf_cutoff)
+
+    mt = annotate_vep_fields(mt)
+
+    mt = apply_variant_filters(mt, args.filter_biallelic, args.filter_protein_domain)
+
+    mt = annotate_pathogenic_scores(mt)
+
+    mt = build_consequence_groups(mt)
+
+    mt_grouped = aggregate_gene_level(mt)
+
+    mt_grouped = annotate_gene_sets(mt_grouped, args.set_file)
+
+    mt_joint = aggregate_by_genotype_mode(mt_grouped, args.hets, args.homs, args.chets, args.homs_chets)
+
+    mt_joint = annotate_sample_covariates(mt_joint)
+
+    tb_final = run_logreg_stratified(mt_joint, maf_cutoff)
+
+    export_results(tb_final, args.output_dir, args.exome_cohort, args.write_to_file)
 
     hl.stop()
 
