@@ -161,47 +161,31 @@ def annotate_from_dict(ht: hl.Table,
     return ht
 
 
+def import_vcf_and_split(vcf_path, force_bgz, split_multi_allelic):
+    """Import VEP-annotated VCF as MatrixTable and optionally split multi-allelic sites."""
+    mt = hl.import_vcf(path=vcf_path, force_bgz=force_bgz)
 
-def main(args):
-    # Init Hail
-    hl.init(default_reference=args.default_ref_genome)
-
-    # Import VEPed VCF file as MatrixTable and get VCF file meta-data
-    # vcf_path = args.vcf_vep_path
-    mt = hl.import_vcf(path=get_vep_vqsr_vcf_path(),
-                       force_bgz=args.force_bgz)
-
-    # getting annotated VEP fields names from VCF-header
-    vep_fields = get_vep_fields(vcf_path=get_vep_vqsr_vcf_path(),
-                                vep_csq_field=args.csq_field)
-
-    if args.split_multi_allelic:
-        # split multi-allelic variants
+    if split_multi_allelic:
         mt = hl.split_multi_hts(mt)
-
-        # split/annotate fields in the info field (use allele index )
         mt = mt.annotate_rows(info=mt.info.annotate(**{field: mt.info[field][mt.a_index - 1]
                                                        for field in INFO_FIELDS}))
 
-    # parse/annotate the CSQ field in a different structure
+    return mt
+
+
+def parse_csq_transcripts(mt, csq_field, vep_fields):
+    """Extract rows, parse the CSQ field into per-transcript dicts, and filter by allele index."""
     tb_csq = mt.rows()
     tb_csq = (tb_csq
-              .annotate(csq_raw=tb_csq.info[args.csq_field])
+              .annotate(csq_raw=tb_csq.info[csq_field])
               )
 
-    # Convert/annotate all transcripts per variants with a structure of type array<dict<str, str>>.
-    # The transcript(s) are represented as a dict<k,v>, where keys are the field names extracted from the VCF header and
-    # the values are the current annotated values in the CSQ field.
     tb_csq = (tb_csq
               .annotate(csq_raw=tb_csq.csq_raw.map(lambda x:
                                                    hl.dict(hl.zip(vep_fields, x.split('[|]')))
                                                    ))
               )
 
-    # Keep transcript(s) matching with the allele index (only used if variant were split with split_multi_hts)
-    # It requires having the flag "ALLELE_NUM" annotated by VEP
-    # Apply only were the alleles were split.
-    # TODO: Handle exception when the flag "ALLELE_NUM" is not present
     if all([x in list(tb_csq._fields.keys()) for x in ['was_split', 'a_index']]):
         tb_csq = (tb_csq
                   .annotate(csq_raw=hl.cond(tb_csq.was_split,
@@ -213,54 +197,63 @@ def main(args):
                             )
                   )
 
-    # select and annotate one transcript per variant based on pre-defined rules
-    tb_csq = pick_transcript(ht=tb_csq,
-                             csq_array='csq_raw',
-                             )
+    return tb_csq
 
-    # Expand selected transcript (dict) annotations adding independent fields.
-    tb_csq = annotate_from_dict(ht=tb_csq,
-                                dict_field='tx',
-                                output_filed='vep')
 
-    # Parse the "Consequence" field. Keep only the more severe consequence.
-    # Avoid the notation "consequence_1&consequence_2"
+def pick_and_expand_transcript(tb_csq, vep_fields):
+    """Pick one transcript per variant, expand fields, parse Consequence and DOMAINS, drop temp fields."""
+    tb_csq = pick_transcript(ht=tb_csq, csq_array='csq_raw')
+
+    tb_csq = annotate_from_dict(ht=tb_csq, dict_field='tx', output_filed='vep')
+
     tb_csq = (tb_csq
               .annotate(vep=tb_csq.vep.annotate(Consequence=tb_csq.vep.Consequence.split('&')[0]))
               )
 
-    # Parse the protein DOMAIN field
     if 'DOMAINS' in vep_fields:
         tb_csq = (tb_csq
                   .annotate(vep=tb_csq.vep.annotate(DOMAINS=vep_protein_domain_ann_expr(tb_csq.vep['DOMAINS'])))
                   )
 
-    # drop redundant/temp fields
     tb_csq = (tb_csq
               .drop('csq_raw', 'tx')
               .repartition(500)
               )
 
+    return tb_csq
+
+
+def checkpoint_and_export(ht, output_path, overwrite, write_to_file):
+    """Checkpoint table and optionally export as BGZ-compressed TSV."""
+    ht = (ht
+          .checkpoint(output=output_path,
+                      overwrite=overwrite)
+          )
+
+    if write_to_file:
+        ht.export(f'{output_path}.tsv.bgz')
+
+    return ht
+
+
+def main(args):
+    # Init Hail
+    hl.init(default_reference=args.default_ref_genome)
+
+    vep_fields = get_vep_fields(vcf_path=get_vep_vqsr_vcf_path(),
+                                vep_csq_field=args.csq_field)
+
+    mt = import_vcf_and_split(get_vep_vqsr_vcf_path(), args.force_bgz, args.split_multi_allelic)
+
+    tb_csq = parse_csq_transcripts(mt, args.csq_field, vep_fields)
+
+    tb_csq = pick_and_expand_transcript(tb_csq, vep_fields)
+
     # print fields overview
     tb_csq.describe()
 
-    # write table as HailTable to disk
-    # (tb_csq
-    # .write(output=args.tb_output_path,
-    #        overwrite=args.overwrite)
-    # )
-
     output_path = get_variant_qc_ht_path(part='vep_vqsr', split=args.split_multi_allelic)
-    tb_csq = (tb_csq
-              .checkpoint(output=output_path,
-                          overwrite=args.overwrite)
-              )
-
-    if args.write_to_file:
-        # write table to disk as a BGZ-compressed TSV file
-        (tb_csq
-         .export(f'{output_path}.tsv.bgz')
-         )
+    checkpoint_and_export(tb_csq, output_path, args.overwrite, args.write_to_file)
 
     # Stop Hail
     hl.stop()
