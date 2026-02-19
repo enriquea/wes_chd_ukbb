@@ -9,8 +9,8 @@ VCFs requirements: version 4.2, multi sample-called and BGZ compressed.
 Usage example:
 
 nohup python vcf2mt.py \
-      --vcf_path "file:///home/ubuntu/data/test_vcfs/*.vcf.gz" \
-      --output_path "file:///home/ubuntu/data/test.mt" \
+      --vcf_path "${WES_NFS_DIR:-file:///home/ubuntu/data}/test_vcfs/*.vcf.gz" \
+      --output_path "${WES_NFS_DIR:-file:///home/ubuntu/data}/test.mt" \
       --force_bgz \
       --overwrite \
       > nohup.log 2>&1 &

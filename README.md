@@ -28,9 +28,18 @@ python -m sample_qc.apply_hard_filters
 ```
 
 ### Path configuration
-Before running, update the two path prefixes in `utils/data_utils.py`:
-- `nfs_dir` — root of your local data mount (default: `file:///home/ubuntu/data`)
-- `hdfs_dir` / `hdfs_checkpoint_dir` — HDFS or local output paths (default: `hdfs://spark-master:9820/...`)
+Paths are configured via environment variables. Set them before running any pipeline:
+
+```bash
+export WES_NFS_DIR="file:///home/ubuntu/data"   # root of your local data mount
+export WES_HDFS_DIR="hdfs://spark-master:9820"  # HDFS base URL for output/checkpoint dirs
+```
+
+If these variables are not set, the original production defaults (`file:///home/ubuntu/data` and
+`hdfs://spark-master:9820`) are used, preserving backward compatibility.
+
+Both variables are centralised in `utils/config.py` — the only file that needs to change when
+porting the project to a new host or storage backend.
 
 ---
 

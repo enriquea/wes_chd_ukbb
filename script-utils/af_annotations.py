@@ -18,11 +18,13 @@ from utils.data_utils import (get_gnomad_genomes_v3_af_ht,
 
 from utils.generic import current_date
 
+from utils.config import NFS_DIR, HDFS_DIR
+
 hl.init(default_reference='GRCh38')
 
-nfs_dir = 'file:///home/ubuntu/data'
-nfs_tmp = 'file:///home/ubuntu/data/tmp'
-hdfs_dir = 'hdfs://spark-master:9820/dir/hail_data'
+nfs_dir = NFS_DIR
+nfs_tmp = f'{NFS_DIR}/tmp'
+hdfs_dir = f'{HDFS_DIR}/dir/hail_data'
 
 ## import variant table
 variant_ht = get_vep_annotation_ht()

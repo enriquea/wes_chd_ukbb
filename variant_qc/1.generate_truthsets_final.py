@@ -26,6 +26,8 @@ from gnomad.sample_qc.relatedness import (
 )
 from hail import Table
 
+from utils.config import NFS_DIR, HDFS_DIR
+
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -39,11 +41,11 @@ INBREEDING_COEFF_HARD_CUTOFF = -0.3
 
 ################################
 # Define the hail persistent storage directory
-nfs_dir = 'file:///home/ubuntu/data'
-hdfs_dir = 'hdfs://spark-master:9820/dir/hail_data'
-# hdfs_checkpoint_dir = 'hdfs://spark-master:9820/checkpoint'
+nfs_dir = NFS_DIR
+hdfs_dir = f'{HDFS_DIR}/dir/hail_data'
+# hdfs_checkpoint_dir = f'{HDFS_DIR}/checkpoint'
 
-project_dir = 'file:///home/ubuntu/data/projects/wes_chd_ukbb'
+project_dir = f'{NFS_DIR}/projects/wes_chd_ukbb'
 
 ######################################
 
