@@ -77,13 +77,15 @@ from utils.qc import (apply_sample_qc_filtering,
 from utils.stats import logistic_regression
 from utils.vep import vep_protein_domain_filter_expr
 
+from utils.config import NFS_DIR, HDFS_DIR
+
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger("Burden testing pipeline")
 logger.setLevel(logging.INFO)
 
-nfs_dir = 'file:///home/ubuntu/data'
-nfs_tmp = 'file:///home/ubuntu/data/tmp'
-hdfs_dir = 'hdfs://spark-master:9820/dir'
+nfs_dir = NFS_DIR
+nfs_tmp = f'{NFS_DIR}/tmp'
+hdfs_dir = f'{HDFS_DIR}/dir'
 
 # Deleterious scores cutoff
 MVP_THRESHOLD = 0.8

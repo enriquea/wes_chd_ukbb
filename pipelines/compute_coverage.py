@@ -68,6 +68,7 @@ from utils.data_utils import (get_sample_meta_data,
                               get_mt_data,
                               get_qc_mt_path, get_variant_qc_ht_path)
 from utils.qc import apply_sample_qc_filtering
+from utils.config import NFS_DIR
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -76,7 +77,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-nfs_dir = 'file:///home/ubuntu/data'
+nfs_dir = NFS_DIR
 
 
 # NOTE: This function was modified from gnomad_methods module to work on dense MT, rather than sparse MT.

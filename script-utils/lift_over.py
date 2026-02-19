@@ -10,6 +10,8 @@ some data from one genome coordinate to other.
 
 from gnomad.utils.liftover import *
 
+from utils.config import NFS_DIR
+
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
     datefmt="%m/%d/%Y %I:%M:%S %p",
@@ -19,8 +21,8 @@ logger.setLevel(logging.INFO)
 
 hl.init()
 
-nfs_dir = 'file:///home/ubuntu/data'
-project_dir = 'file:///home/ubuntu/data/projects/wes_chd_ukbb'
+nfs_dir = NFS_DIR
+project_dir = f'{NFS_DIR}/projects/wes_chd_ukbb'
 
 rg37 = hl.get_reference("GRCh37")
 rg38 = hl.get_reference("GRCh38")

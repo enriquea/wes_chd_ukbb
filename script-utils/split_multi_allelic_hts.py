@@ -2,6 +2,8 @@ import argparse
 import hail as hl
 import os
 
+from utils.config import NFS_DIR
+
 """
 Simple script to generate a fully bi-allelic MatrixTable
 from a MT contating multi-allelic variants. 
@@ -16,7 +18,7 @@ for details.
 hl.init(default_reference='GRCh38')
 
 # path to MatrixTable
-mt_path = 'file:///home/ubuntu/data/hail_data/mts/chd_ukbb_08092020.mt'
+mt_path = f'{NFS_DIR}/hail_data/mts/chd_ukbb_08092020.mt'
 
 # read matrix
 mt = hl.read_matrix_table(mt_path)
@@ -25,7 +27,7 @@ mt = hl.read_matrix_table(mt_path)
 mt = hl.split_multi_hts(mt)
 
 # write MT to disk
-mt.write("file:///home/ubuntu/data/hail_data/mts/chd_ukbb_split_09092020.mt")
+mt.write(f"{NFS_DIR}/hail_data/mts/chd_ukbb_split_09092020.mt")
 
 # stop Hail
 hl.stop()

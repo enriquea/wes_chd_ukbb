@@ -128,7 +128,7 @@ def compute_mean_coverage(
 
 def main(args):
 
-    # nfs_dir = 'file:///home/ubuntu/data'
+    # nfs_dir = NFS_DIR  # use utils.config.NFS_DIR if needed
 
     hl.init(default_reference=args.default_reference)
 

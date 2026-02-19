@@ -1,11 +1,10 @@
 # wes_chd_ukbb
 
-
 ## Meta-analysis of a large-scale wes dataset using Hail
 
-This repository contains a series of pipelines (mostly command-line tools) to analyse the 
-CHD case-control exome cohort linked to the manuscript: 
-*"Assessing the contribution of rare variants to congenital heart disease through 
+This repository contains a series of pipelines (mostly command-line tools) to analyse the
+CHD case-control exome cohort linked to the manuscript:
+*"Assessing the contribution of rare variants to congenital heart disease through
 a large-scale case-control exome study"* ([medRxiv link](https://doi.org/10.1101/2023.12.23.23300495)) .
 
 
@@ -13,10 +12,52 @@ Most pipelines were adapted from the gnomad repository [1]. Pipelines were built
 Hail (https://hail.is).
 
 
-*Exome dataset*: Congenital Heart Disease (CHD) cases were mainly sequenced as part of an initiative from the German 
-Competence Network for Congenital Heart Defects, the Deciphering Developmental Disorder (DDD) project and the 
-University of Nottingham (UK); controls were sequenced as part of the UK Biobank (UKBB). 
+*Exome dataset*: Congenital Heart Disease (CHD) cases were mainly sequenced as part of an initiative from the German
+Competence Network for Congenital Heart Defects, the Deciphering Developmental Disorder (DDD) project and the
+University of Nottingham (UK); controls were sequenced as part of the UK Biobank (UKBB).
 
+---
+
+## Setup
+
+### Prerequisites
+- Linux (Ubuntu 20.04+ recommended)
+- [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or Python 3.9 + pip
+- Java 11 on `PATH` (required by Hail/Spark)
+- A running Spark standalone cluster or use Hail in local mode
+
+### Install with conda (recommended)
+```bash
+conda env create -f environment.yml
+conda activate wes_chd_ukbb
+```
+
+### Install with pip
+```bash
+pip install -r requirements.txt
+```
+
+> **Note:** `pyspark` is not listed in the requirements — Hail bundles a compatible Spark version. Installing a separate `pyspark` causes classpath conflicts.
+
+### Run a script
+Scripts are run as Python modules from the repository root:
+```bash
+python -m sample_qc.apply_hard_filters
+```
+
+### Path configuration
+Paths are configured via environment variables. Set them before running any pipeline:
+
+```bash
+export WES_NFS_DIR="file:///home/ubuntu/data"   # root of your local data mount
+export WES_HDFS_DIR="hdfs://spark-master:9820"  # HDFS base URL for output/checkpoint dirs
+```
+
+If these variables are not set, the original production defaults (`file:///home/ubuntu/data` and
+`hdfs://spark-master:9820`) are used, preserving backward compatibility.
+
+Both variables are centralised in `utils/config.py` — the only file that needs to change when
+porting the project to a new host or storage backend.
 
 ### Sample QC
 1. *Hard filters*: Mark samples with unspecific chromosomal sex, low call rate and/or low coverage.

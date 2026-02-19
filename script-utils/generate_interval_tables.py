@@ -11,10 +11,12 @@ from utils.intervals import (import_intervals_from_bed,
                              generate_interval_list_ht,
                              write_intervals_ht)
 
+from utils.config import NFS_DIR
+
 
 hl.init()
 
-nfs_dir = 'file:///home/ubuntu/data'
+nfs_dir = NFS_DIR
 
 #### SSV2 ####
 

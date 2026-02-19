@@ -7,6 +7,7 @@ import logging
 import hail as hl
 
 from utils.generic import current_date
+from utils.config import NFS_DIR
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-nfs_dir = 'file:///home/ubuntu/data'
+nfs_dir = NFS_DIR
 
 
 def liftover_intervals(t: hl.Table,

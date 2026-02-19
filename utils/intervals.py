@@ -25,8 +25,9 @@ Key: ['interval']
 import hail as hl
 from utils.generic import current_date
 
+from utils.config import NFS_DIR
 
-nfs_dir = 'file:///home/ubuntu/data'
+nfs_dir = NFS_DIR
 
 
 # required global fields to be annotated in the interval HT

@@ -49,8 +49,10 @@ from gnomad.utils.annotations import annotate_adj
 from utils.expressions import bi_allelic_expr
 from utils.filter import filter_to_autosomes, filter_genotypes_ab
 
-nfs_dir = 'file:///home/ubuntu/data'
-local_dir = '/home/ubuntu/data'
+from utils.config import NFS_DIR
+
+nfs_dir = NFS_DIR
+local_dir = NFS_DIR.replace('file://', '', 1)
 
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger(__name__)
