@@ -176,13 +176,9 @@ def compute_coverage_stats(
     ).rows()
 
 
-def main(args):
-    # init hail
-    hl.init(default_reference=args.default_ref_genome)
-
-    # import MT
-    ds = args.exome_cohort
-    if args.run_test_mode:
+def load_mt(exome_cohort, run_test_mode, skip_sample_qc_filtering):
+    """Load raw MatrixTable (test mode: chr20 sample) and optionally apply sample QC filtering."""
+    if run_test_mode:
         logger.info('Running pipeline on test data...')
         mt = (get_mt_data(part='raw_chr20')
               .sample_rows(0.1)
@@ -191,111 +187,103 @@ def main(args):
         logger.info('Running pipeline on raw MatrixTable...')
         mt = get_mt_data(part='raw')
 
-    # keep samples passing qc to compute base-pair coverage
-    # 1. Sample-QC filtering
-    if not args.skip_sample_qc_filtering:
+    if not skip_sample_qc_filtering:
         logger.info('Applying per sample QC filtering...')
         mt = apply_sample_qc_filtering(mt)
 
-    n_variants, n_samples = mt.count()
+    return mt
 
-    # Getting variant table. Basically, a table keyed by <locus> or <locus, alleles>
-    # with all variants in the dataset and no extra fields (a.k.a reference table).
-    tb_variants = (mt
-                   .select_rows()
-                   .rows()
+
+def compute_overall_coverage(mt, tb_variants):
+    """Compute overall coverage stats and annotate the variant table."""
+    n_variants, n_samples = mt.count()
+    logger.info(f"Computing coverage stats for {n_variants} variant over {n_samples} samples...")
+    ht_cov_overall = compute_coverage_stats(mt=mt, reference_ht=tb_variants)
+
+    tb_variants = (tb_variants
+                   .annotate(overall=ht_cov_overall[tb_variants.key])
                    )
 
-    # compute overall coverage
-    if args.compute_overall_coverage:
-        logger.info(f"Computing coverage stats for {n_variants} variant over {n_samples} samples...")
-        ht_cov_overall = compute_coverage_stats(mt=mt,
-                                                reference_ht=tb_variants)
+    return tb_variants
 
-        tb_variants = (tb_variants
-                       .annotate(overall=ht_cov_overall[tb_variants.key])
-                       )
 
-    # compute coverage stratified by phenotype status (expected binary)
-    # force the input MT to have a case_control bool filed (is_case)
-    # ***
-    if args.compute_phe_coverage:
-        logger.info(f"Computing coverage stats stratified by phenotype status...")
+def compute_phenotype_stratified_coverage(mt, tb_variants, phe_field):
+    """Annotate cols with case/control label and compute per-stratum coverage stats."""
+    mt = (mt.annotate_cols(**get_sample_meta_data()[mt.col_key]))
 
-        # Annotate sample meta info
-        # Note: Temporal solution, better to import annotated MT
-        mt = (mt.annotate_cols(**get_sample_meta_data()[mt.col_key]))
+    mt = (mt
+          .annotate_cols(case_control=hl.if_else(mt[phe_field],
+                                                 'case',
+                                                 'control'))
+          )
 
-        mt = (mt
-              .annotate_cols(case_control=hl.if_else(mt[args.phe_field],
-                                                     'case',
-                                                     'control'))
+    strata = (mt
+              .aggregate_cols(hl.agg.collect_as_set(mt['case_control']))
               )
 
-        strata = (mt
-                  .aggregate_cols(hl.agg.collect_as_set(mt['case_control']))
-                  )
+    dict_strata_ht = {s: compute_coverage_stats(mt=mt.filter_cols(mt['case_control'] == s),
+                                                reference_ht=tb_variants)
+                      for s in strata}
 
-        dict_strata_ht = {s: compute_coverage_stats(mt=mt.filter_cols(mt['case_control'] == s),
-                                                    reference_ht=tb_variants)
-                          for s in strata}
+    for k in dict_strata_ht.keys():
+        _tb = dict_strata_ht.get(k)
+        tb_variants = tb_variants.annotate(**{k: _tb[tb_variants.key]})
 
-        for k in dict_strata_ht.keys():
-            _tb = dict_strata_ht.get(k)
-            tb_variants = tb_variants.annotate(**{k: _tb[tb_variants.key]})
+    return tb_variants
 
-        if args.run_binomial_test:
-            logger.info(f"Running binomial test...")
-            # perform a binomial test on coverage and case/control status
-            # DOI: https://doi.org/10.1002/acn3.582
-            tb_binomial = (tb_variants
-                           .annotate(n_cases_over_10=hl.int(tb_variants.case.over_10 *
-                                                            tb_variants.case.n_samples),
-                                     n_controls_over_10=hl.int(tb_variants.control.over_10 *
-                                                               tb_variants.control.n_samples),
-                                     total_cases=tb_variants.case.n_samples,
-                                     total_controls=tb_variants.control.n_samples,
-                                     )
-                           .select('n_cases_over_10',
-                                   'n_controls_over_10',
-                                   'total_cases',
-                                   'total_controls')
-                           )
 
-            binomial_expr = {'p_value':
-                hl.binom_test(
-                    x=tb_binomial.n_cases_over_10,
-                    n=tb_binomial.n_cases_over_10 + tb_binomial.n_controls_over_10,
-                    p=tb_binomial.total_cases / (tb_binomial.total_cases + tb_binomial.total_controls),
-                    alternative='two.sided')
-            }
+def run_binomial_test(tb_variants):
+    """Run a binomial test on coverage vs case/control status and annotate the variant table."""
+    logger.info(f"Running binomial test...")
+    tb_binomial = (tb_variants
+                   .annotate(n_cases_over_10=hl.int(tb_variants.case.over_10 *
+                                                    tb_variants.case.n_samples),
+                             n_controls_over_10=hl.int(tb_variants.control.over_10 *
+                                                       tb_variants.control.n_samples),
+                             total_cases=tb_variants.case.n_samples,
+                             total_controls=tb_variants.control.n_samples,
+                             )
+                   .select('n_cases_over_10',
+                           'n_controls_over_10',
+                           'total_cases',
+                           'total_controls')
+                   )
 
-            tb_binomial = (tb_binomial
-                           .annotate(**binomial_expr)
-                           )
+    binomial_expr = {'p_value':
+        hl.binom_test(
+            x=tb_binomial.n_cases_over_10,
+            n=tb_binomial.n_cases_over_10 + tb_binomial.n_controls_over_10,
+            p=tb_binomial.total_cases / (tb_binomial.total_cases + tb_binomial.total_controls),
+            alternative='two.sided')
+    }
 
-            tb_variants = (
-                tb_variants
-                    .annotate(binomial_stats=tb_binomial[tb_variants.key])
-            )
+    tb_binomial = (tb_binomial
+                   .annotate(**binomial_expr)
+                   )
 
-    # make coverage filter expressions
-    # Note: the default number of reads is set to 10X
+    tb_variants = (
+        tb_variants
+            .annotate(binomial_stats=tb_binomial[tb_variants.key])
+    )
+
+    return tb_variants
+
+
+def build_coverage_filters(tb_variants, compute_overall, compute_phe, run_binom,
+                           min_sample_prop, pvalue_threshold):
+    """Build and annotate per-site coverage filter expressions."""
     logger.info(f"Assigning per site coverage filters...")
-
-    significant_level = args.pvalue_threshold
-    min_sample_prop = args.min_sample_proportion
 
     coverage_filter_dict_expr = {}
 
-    if args.compute_overall_coverage:
+    if compute_overall:
         coverage_filter_dict_expr.update(
             {'overall_hard_cutoff':
                  hl.if_else((tb_variants.overall.over_10 >= min_sample_prop),
                             "pass",
                             "fail")}
         )
-    if args.compute_phe_coverage:
+    if compute_phe:
         # DOI: https://doi.org/10.1016/j.ajhg.2018.08.016
         coverage_filter_dict_expr.update(
             {'phe_hard_cutoff':
@@ -304,66 +292,115 @@ def main(args):
                             "concordant",
                             "discordant")}
         )
-    if args.run_binomial_test:
+    if run_binom:
         coverage_filter_dict_expr.update(
             {'phe_binomial':
-                 hl.if_else(tb_variants.binomial_stats.p_value < significant_level,
+                 hl.if_else(tb_variants.binomial_stats.p_value < pvalue_threshold,
                             'dependent',
                             'independent')}
 
         )
 
-    # annotate coverage filters
     tb_variants = (tb_variants
                    .annotate(coverage_filter=hl.struct(**coverage_filter_dict_expr))
                    )
 
-    # add useful global annotations to final coverage stats ht
-    # as well as affected/non-affected summary counts per filters
+    return tb_variants
+
+
+def annotate_global_stats(tb_variants, exome_cohort, min_sample_prop, pvalue_threshold,
+                          compute_overall, compute_phe, run_binom):
+    """Annotate global fields with run metadata and per-filter summary counts."""
     global_ann_dict_expr = {
         'date': current_date(),
-        'cohort': ds,
+        'cohort': exome_cohort,
         'min_sample_prop': min_sample_prop}
-    if args.compute_overall_coverage:
+    if compute_overall:
         global_ann_dict_expr.update({'overall_hard_cutoff':
             tb_variants.aggregate(
                 hl.agg.counter(
                     tb_variants.coverage_filter.overall_hard_cutoff))}
         )
-    if args.compute_phe_coverage:
+    if compute_phe:
         global_ann_dict_expr.update({'phe_hard_cutoff':
             tb_variants.aggregate(
                 hl.agg.counter(
                     tb_variants.coverage_filter.phe_hard_cutoff))}
         )
-    if args.run_binomial_test:
+    if run_binom:
         global_ann_dict_expr.update({'phe_binomial':
             tb_variants.aggregate(
                 hl.agg.counter(
                     tb_variants.coverage_filter.phe_binomial)),
-            'binomial_pvalue_cutoff': significant_level if args.run_binomial_test else hl.float('')}
+            'binomial_pvalue_cutoff': pvalue_threshold if run_binom else hl.float('')}
         )
 
     tb_variants = (tb_variants
                    .annotate_globals(**global_ann_dict_expr)
                    )
 
-    # check
-    tb_variants.globals.show()
-    tb_variants.describe()
+    return tb_variants
 
-    # write HT
-    ht_output_path = get_variant_qc_ht_path(dataset=ds, part='coverage_stats')
-    tb_variants = tb_variants.checkpoint(
-        output=ht_output_path,
-        overwrite=args.overwrite)
 
-    # export to file if true
-    if args.write_to_file:
+def export_results(tb_variants, exome_cohort, overwrite, write_to_file):
+    """Checkpoint the coverage table and optionally export as flattened BGZ-compressed TSV."""
+    ht_output_path = get_variant_qc_ht_path(dataset=exome_cohort, part='coverage_stats')
+    tb_variants = tb_variants.checkpoint(output=ht_output_path, overwrite=overwrite)
+
+    if write_to_file:
         (tb_variants
          .flatten()
          .export(f'{ht_output_path}.tsv.bgz')
          )
+
+    return tb_variants
+
+
+def main(args):
+    # init hail
+    hl.init(default_reference=args.default_ref_genome)
+
+    ds = args.exome_cohort
+
+    mt = load_mt(ds, args.run_test_mode, args.skip_sample_qc_filtering)
+
+    tb_variants = (mt
+                   .select_rows()
+                   .rows()
+                   )
+
+    if args.compute_overall_coverage:
+        tb_variants = compute_overall_coverage(mt, tb_variants)
+
+    if args.compute_phe_coverage:
+        tb_variants = compute_phenotype_stratified_coverage(mt, tb_variants, args.phe_field)
+
+        if args.run_binomial_test:
+            tb_variants = run_binomial_test(tb_variants)
+
+    tb_variants = build_coverage_filters(
+        tb_variants,
+        args.compute_overall_coverage,
+        args.compute_phe_coverage,
+        args.run_binomial_test,
+        args.min_sample_proportion,
+        args.pvalue_threshold,
+    )
+
+    tb_variants = annotate_global_stats(
+        tb_variants, ds,
+        args.min_sample_proportion,
+        args.pvalue_threshold,
+        args.compute_overall_coverage,
+        args.compute_phe_coverage,
+        args.run_binomial_test,
+    )
+
+    # check
+    tb_variants.globals.show()
+    tb_variants.describe()
+
+    export_results(tb_variants, ds, args.overwrite, args.write_to_file)
 
     hl.stop()
 
