@@ -1,5 +1,23 @@
 # wes_chd_ukbb
 
+## Meta-analysis of a large-scale wes dataset using Hail
+
+This repository contains a series of pipelines (mostly command-line tools) to analyse the
+CHD case-control exome cohort linked to the manuscript:
+*"Assessing the contribution of rare variants to congenital heart disease through
+a large-scale case-control exome study"* ([medRxiv link](https://doi.org/10.1101/2023.12.23.23300495)) .
+
+
+Most pipelines were adapted from the gnomad repository [1]. Pipelines were built using the python-like library
+Hail (https://hail.is).
+
+
+*Exome dataset*: Congenital Heart Disease (CHD) cases were mainly sequenced as part of an initiative from the German
+Competence Network for Congenital Heart Defects, the Deciphering Developmental Disorder (DDD) project and the
+University of Nottingham (UK); controls were sequenced as part of the UK Biobank (UKBB).
+
+---
+
 ## Setup
 
 ### Prerequisites
@@ -40,25 +58,6 @@ If these variables are not set, the original production defaults (`file:///home/
 
 Both variables are centralised in `utils/config.py` — the only file that needs to change when
 porting the project to a new host or storage backend.
-
----
-
-## Meta-analysis of a large-scale wes dataset using Hail
-
-This repository contains a series of pipelines (mostly command-line tools) to analyse the 
-CHD case-control exome cohort linked to the manuscript: 
-*"Assessing the contribution of rare variants to congenital heart disease through 
-a large-scale case-control exome study"* ([medRxiv link](https://doi.org/10.1101/2023.12.23.23300495)) .
-
-
-Most pipelines were adapted from the gnomad repository [1]. Pipelines were built using the python-like library
-Hail (https://hail.is).
-
-
-*Exome dataset*: Congenital Heart Disease (CHD) cases were mainly sequenced as part of an initiative from the German 
-Competence Network for Congenital Heart Defects, the Deciphering Developmental Disorder (DDD) project and the 
-University of Nottingham (UK); controls were sequenced as part of the UK Biobank (UKBB). 
-
 
 ### Sample QC
 1. *Hard filters*: Mark samples with unspecific chromosomal sex, low call rate and/or low coverage.
