@@ -21,97 +21,105 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+def filter_and_prune_mt(exome_cohort, maf_threshold, ld_prune_r2, overwrite):
+    """Filter MT to QC-passing samples and common bi-allelic SNPs, then LD-prune and write."""
+    logger.info("Importing data...")
+    mt = hl.read_matrix_table(get_qc_mt_path(dataset=exome_cohort,
+                                             part='unphase_adj_genotypes',
+                                             split=True))
+
+    logger.info("Filtering MT to samples passing QC filters (hard filters, relatedness, european ancestries)...")
+    sample_qc_ht = hl.read_table(get_sample_qc_ht_path(part='final_qc'))
+    sample_qc_ht = (sample_qc_ht.filter(sample_qc_ht.pass_filters))
+    mt = (mt
+          .filter_cols(hl.is_defined(sample_qc_ht[mt.col_key]))
+          )
+
+    logger.info("Filtering joint MT to bi-allelic, high-callrate, common SNPs...")
+    mt = (mt
+          .filter_rows(bi_allelic_expr(mt) &
+                       hl.is_snp(mt.alleles[0], mt.alleles[1]) &
+                       (hl.agg.mean(mt.GT.n_alt_alleles()) / 2 > maf_threshold) &
+                       (hl.agg.fraction(hl.is_defined(mt.GT)) > 0.99))
+          .naive_coalesce(500)
+          )
+
+    logger.info("Checkpoint: writing filtered MT before LD pruning...")
+    mt = mt.checkpoint(get_mt_checkpoint_path(dataset=exome_cohort,
+                                              part='high_callrate_common_snp_biallelic'),
+                       overwrite=overwrite)
+
+    logger.info(f"Running ld_prune with r2 = {ld_prune_r2} on MT with {mt.count_rows()} variants...")
+    pruned_variant_table = hl.ld_prune(mt.GT,
+                                       r2=ld_prune_r2,
+                                       bp_window_size=500000,
+                                       memory_per_core=512)
+    mt = (mt
+          .filter_rows(hl.is_defined(pruned_variant_table[mt.row_key]))
+          )
+
+    logger.info("Writing filtered MT with ld-pruned variants...")
+    (mt
+     .write(get_qc_mt_path(dataset=exome_cohort,
+                           part='high_callrate_common_snp_biallelic',
+                           split=True,
+                           ld_pruned=True),
+            overwrite=overwrite)
+     )
+
+
+def run_pca(exome_cohort, n_pcs):
+    """Load LD-pruned MT, run HWE-normalised PCA, and return annotated scores table."""
+    logger.info("Importing filtered ld-pruned MT...")
+    mt = hl.read_matrix_table(get_qc_mt_path(dataset=exome_cohort,
+                                             part='high_callrate_common_snp_biallelic',
+                                             split=True,
+                                             ld_pruned=True))
+
+    logger.info(f"Running PCA on {mt.count_rows()} variants...")
+    eigenvalues, pc_scores, _ = hl.hwe_normalized_pca(mt.GT, k=n_pcs)
+
+    logger.info(f"Eigenvalues: {eigenvalues}")
+
+    pc_scores = (pc_scores
+                 .annotate_globals(**{'eigenvalues': eigenvalues})
+                 )
+
+    pca_table = (pc_scores
+                 .annotate(**{'PC' + str(k + 1): pc_scores.scores[k] for k in range(0, n_pcs)})
+                 .drop('scores')
+                 )
+
+    return pca_table
+
+
+def export_results(pca_table, output_ht_path, overwrite, write_to_file):
+    """Checkpoint PCA table and optionally export as BGZ-compressed TSV."""
+    logger.info(f"Writing HT with PCA results...")
+    pca_table = (pca_table
+                 .checkpoint(output=output_ht_path,
+                             overwrite=overwrite)
+                 )
+
+    if write_to_file:
+        (pca_table
+         .export(f'{output_ht_path}.tsv.bgz')
+         )
+
+    return pca_table
+
+
 def main(args):
 
     # Start Hail
     hl.init(default_reference=args.default_reference)
 
     if not args.skip_filter_step:
-        logger.info("Importing data...")
+        filter_and_prune_mt(args.exome_cohort, args.maf_threshold, args.ld_prune_r2, args.overwrite)
 
-        # import unfiltered MT
-        mt = hl.read_matrix_table(get_qc_mt_path(dataset=args.exome_cohort,
-                                                 part='unphase_adj_genotypes',
-                                                 split=True))
+    pca_table = run_pca(args.exome_cohort, args.n_pcs)
 
-        # filter to samples passing QC filters
-        logger.info("Filtering MT to samples passing QC filters (hard filters, relatedness, european ancestries)...")
-        sample_qc_ht = hl.read_table(get_sample_qc_ht_path(part='final_qc'))
-        sample_qc_ht = (sample_qc_ht.filter(sample_qc_ht.pass_filters))
-        mt = (mt
-              .filter_cols(hl.is_defined(sample_qc_ht[mt.col_key]))
-              )
-
-        logger.info("Filtering joint MT to bi-allelic, high-callrate, common SNPs...")
-        maf = args.maf_threshold
-        mt = (mt
-              .filter_rows(bi_allelic_expr(mt) &
-                           hl.is_snp(mt.alleles[0], mt.alleles[1]) &
-                           (hl.agg.mean(mt.GT.n_alt_alleles()) / 2 > maf) &
-                           (hl.agg.fraction(hl.is_defined(mt.GT)) > 0.99))
-              .naive_coalesce(500)
-              )
-
-        logger.info("Checkpoint: writing filtered MT before LD pruning...")
-        mt = mt.checkpoint(get_mt_checkpoint_path(dataset=args.exome_cohort,
-                                                  part='high_callrate_common_snp_biallelic'),
-                           overwrite=args.overwrite)
-
-        logger.info(f"Running ld_prune with r2 = {args.ld_prune_r2} on MT with {mt.count_rows()} variants...")
-        # remove correlated variants
-        pruned_variant_table = hl.ld_prune(mt.GT,
-                                           r2=args.ld_prune_r2,
-                                           bp_window_size=500000,
-                                           memory_per_core=512)
-        mt = (mt
-              .filter_rows(hl.is_defined(pruned_variant_table[mt.row_key]))
-              )
-
-        logger.info("Writing filtered MT with ld-pruned variants...")
-        (mt
-         .write(get_qc_mt_path(dataset=args.exome_cohort,
-                               part='high_callrate_common_snp_biallelic',
-                               split=True,
-                               ld_pruned=True),
-                overwrite=args.overwrite)
-         )
-
-    logger.info("Importing filtered ld-pruned MT...")
-    mt = hl.read_matrix_table(get_qc_mt_path(dataset=args.exome_cohort,
-                                             part='high_callrate_common_snp_biallelic',
-                                             split=True,
-                                             ld_pruned=True))
-
-    logger.info(f"Running PCA on {mt.count_rows()} variants...")
-    # run pca on merged dataset
-    eigenvalues, pc_scores, _ = hl.hwe_normalized_pca(mt.GT,
-                                                      k=args.n_pcs)
-
-    logger.info(f"Eigenvalues: {eigenvalues}")
-
-    # Annotate eigenvalues as global field
-    pc_scores = (pc_scores
-                 .annotate_globals(**{'eigenvalues': eigenvalues})
-                 )
-
-    # Annotate PC array as independent fields.
-    pca_table = (pc_scores
-                 .annotate(**{'PC' + str(k + 1): pc_scores.scores[k] for k in range(0, args.n_pcs)})
-                 .drop('scores')
-                 )
-
-    logger.info(f"Writing HT with PCA results...")
-    # write as HT
-    output_ht_path = args.output_ht
-    pca_table = (pca_table
-                 .checkpoint(output=output_ht_path,
-                             overwrite=args.overwrite)
-                 )
-
-    if args.write_to_file:
-        (pca_table
-         .export(f'{output_ht_path}.tsv.bgz')
-         )
+    export_results(pca_table, args.output_ht, args.overwrite, args.write_to_file)
 
     # Stop Hail
     hl.stop()

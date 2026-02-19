@@ -46,64 +46,54 @@ import hail as hl
 nfs_dir = 'file:///home/ubuntu/data'
 
 
-def main(args):
-    hl.init(default_reference='GRCh38')
+def load_and_join_score_fields(ht_variants_path, ht_dbnsfp_path, transcript_field):
+    """Load variant and dbNSFP tables, join score fields, and match scores to transcripts."""
+    ht_variants = hl.read_table(ht_variants_path).select(transcript_field)
+    ht_dbnsfp = hl.read_table(ht_dbnsfp_path)
 
-    transcript_field = args.transcript_field
-
-    # import variant HT
-    ht_variants_path = args.ht_variant
-    ht_variants = hl.read_table(
-        ht_variants_path
-    ).select(transcript_field)
-
-    # import dbNSFP HT
-    ht_dbnsfp_path = args.ht_dbnsfp
-    ht_dbnsfp = hl.read_table(
-        ht_dbnsfp_path
-    )
-
-    # annotate scores from dbNSFP
-    # prediction scores fields to annotate
     score_fields = [f for f in ht_dbnsfp.row if f.endswith('_score') or f == 'CADD_phred']
 
     ht_variants = (ht_variants
                    .annotate(**ht_dbnsfp.select(*score_fields)[ht_variants.key])
                    )
 
-    #  Match score with specific transcript
     ht_variants = (ht_variants
                    .annotate(**{f: ht_variants[f].get(ht_variants[transcript_field])
                                for f in score_fields}
                             )
                    )
 
-    # Annotate extra info from dbNSFP
-    # Note: Expected extra fields (as struct) from dbNSFP: ['gnomAD', 'ExAC', '1000Gp3', 'ESP6500', 'clinvar']
+    return ht_variants, ht_dbnsfp
 
+
+def annotate_optional_dbnsfp_fields(ht_variants, ht_dbnsfp,
+                                    add_clinvar, add_gnomad, add_exac,
+                                    add_1000Gp3, add_ESP6500):
+    """Conditionally annotate extra struct fields (clinvar, gnomAD, ExAC, 1000Gp3, ESP6500) from dbNSFP."""
+    # Note: Expected extra fields (as struct) from dbNSFP: ['gnomAD', 'ExAC', '1000Gp3', 'ESP6500', 'clinvar']
     ann_expr_dict = {}
 
-    if args.add_clinvar:
+    if add_clinvar:
         ann_expr_dict.update(
             {'clinvar': ht_dbnsfp[ht_variants.key]['clinvar']}
         )
 
-    if args.add_gnomad:
+    if add_gnomad:
         ann_expr_dict.update(
             {'gnomAD': ht_dbnsfp[ht_variants.key]['gnomAD']}
         )
 
-    if args.add_exac:
+    if add_exac:
         ann_expr_dict.update(
             {'ExAC': ht_dbnsfp[ht_variants.key]['ExAC']}
         )
 
-    if args.add_1000Gp3:
+    if add_1000Gp3:
         ann_expr_dict.update(
             {'1000Gp3': ht_dbnsfp[ht_variants.key]['1000Gp3']}
         )
 
-    if args.add_ESP6500:
+    if add_ESP6500:
         ann_expr_dict.update(
             {'ESP6500': ht_dbnsfp[ht_variants.key]['ESP6500']}
         )
@@ -113,17 +103,33 @@ def main(args):
                        .annotate(**ann_expr_dict)
                        )
 
-    # write annotated table
-    # write HT
-    ht_variants = ht_variants.checkpoint(
-        output=args.ht_output,
-        overwrite=args.overwrite)
+    return ht_variants
 
-    # export to file if true
-    if args.write_to_file:
-        (ht_variants
-         .export(f'{args.ht_output}.tsv.bgz')
-         )
+
+def export_results(ht, output_path, overwrite, write_to_file):
+    """Checkpoint the table and optionally export as BGZ-compressed TSV."""
+    ht = ht.checkpoint(output=output_path, overwrite=overwrite)
+
+    if write_to_file:
+        ht.export(f'{output_path}.tsv.bgz')
+
+    return ht
+
+
+def main(args):
+    hl.init(default_reference='GRCh38')
+
+    ht_variants, ht_dbnsfp = load_and_join_score_fields(
+        args.ht_variant, args.ht_dbnsfp, args.transcript_field
+    )
+
+    ht_variants = annotate_optional_dbnsfp_fields(
+        ht_variants, ht_dbnsfp,
+        args.add_clinvar, args.add_gnomad, args.add_exac,
+        args.add_1000Gp3, args.add_ESP6500
+    )
+
+    export_results(ht_variants, args.ht_output, args.overwrite, args.write_to_file)
 
     hl.stop()
 
