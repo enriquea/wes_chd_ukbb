@@ -46,30 +46,31 @@ def main(args):
         quiet=True,
     )
 
-    # Check 1: range Table
-    logger.info("Running Table check (range_table(100)) ...")
-    ht = hl.utils.range_table(100)
-    n_rows = ht.count()
-    assert n_rows == 100, f"Table check failed: expected 100 rows, got {n_rows}"
-    logger.info(f"  Table check passed ({n_rows} rows)")
+    try:
+        # Check 1: range Table
+        logger.info("Running Table check (range_table(100)) ...")
+        ht = hl.utils.range_table(100)
+        n_rows = ht.count()
+        assert n_rows == 100, f"Table check failed: expected 100 rows, got {n_rows}"
+        logger.info(f"  Table check passed ({n_rows} rows)")
 
-    # Check 2: Balding-Nichols MatrixTable
-    logger.info(
-        "Running MatrixTable check (balding_nichols_model: 3 pops, 10 samples, 100 variants) ..."
-    )
-    mt = hl.balding_nichols_model(n_populations=3, n_samples=10, n_variants=100)
-    n_variants, n_samples = mt.count()
-    assert n_variants == 100, (
-        f"MatrixTable check failed: expected 100 variants, got {n_variants}"
-    )
-    assert n_samples == 10, (
-        f"MatrixTable check failed: expected 10 samples, got {n_samples}"
-    )
-    logger.info(f"  MatrixTable check passed ({n_variants} variants x {n_samples} samples)")
+        # Check 2: Balding-Nichols MatrixTable
+        logger.info(
+            "Running MatrixTable check (balding_nichols_model: 3 pops, 10 samples, 100 variants) ..."
+        )
+        mt = hl.balding_nichols_model(n_populations=3, n_samples=10, n_variants=100)
+        n_variants, n_samples = mt.count()
+        assert n_variants == 100, (
+            f"MatrixTable check failed: expected 100 variants, got {n_variants}"
+        )
+        assert n_samples == 10, (
+            f"MatrixTable check failed: expected 10 samples, got {n_samples}"
+        )
+        logger.info(f"  MatrixTable check passed ({n_variants} variants x {n_samples} samples)")
 
-    print("\u2713 Hail environment OK")
-
-    hl.stop()
+        print("\u2713 Hail environment OK")
+    finally:
+        hl.stop()
 
 
 if __name__ == "__main__":
