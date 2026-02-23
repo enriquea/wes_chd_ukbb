@@ -198,10 +198,6 @@ fabric.properties
 
 # dir - don't share
 /data
-/testscripts
-/testdata
-/notebooks
-/tmp
 /submit-scripts
-/local_config_shell
 /.idea
+/local
