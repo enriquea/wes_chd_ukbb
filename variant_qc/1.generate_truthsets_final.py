@@ -1,7 +1,20 @@
+"""
+Generate truth-set and auxiliary tables required for the Random Forest (RF) variant QC pipeline.
+
+Produces the following Hail Tables:
+  - truthset.ht         : HapMap / Omni / 1000G / Mills truth data
+  - chd_ukbb.trios.stats.ht : trio transmission statistics
+  - chd_ukbb.inbreeding.ht  : per-variant inbreeding coefficients
+  - chd_ukbb.qc_ac.ht       : allele counts for QC samples
+  - chd_ukbb.allele_data.ht : allele-type annotations
+
+Modified from @pavlos-pa10.
+"""
+
 # eam
 # 2021-02-08
 
-# Modified from @pavlos-pa10 
+# Modified from @pavlos-pa10
 # Generate files required for RF part 1
 import os
 import hail as hl
@@ -50,13 +63,9 @@ project_dir = f'{NFS_DIR}/projects/wes_chd_ukbb'
 ######################################
 
 omni = f'{nfs_dir}/resources/gnomad-training-sets/1000G_omni2.5.hg38.ht'
-omni_ht = hl.read_table(omni)
 mills = f'{nfs_dir}/resources/gnomad-training-sets/Mills_and_1000G_gold_standard.indels.hg38.ht'
-mills_ht = hl.read_table(mills)
 thousand_genomes = f'{nfs_dir}/resources/gnomad-training-sets/1000G_phase1.snps.high_confidence.hg38.ht'
-thousand_genomes_ht = hl.read_table(thousand_genomes)
 hapmap = f'{nfs_dir}/resources/gnomad-training-sets/hapmap_3.3.hg38.ht'
-hapmap_ht = hl.read_table(hapmap)
 
 ######################################
 
@@ -166,10 +175,16 @@ def get_truth_ht() -> Table:
     )
 
 
-if __name__ == "__main__":
+def main(args):
+    """Run the truth-set and auxiliary table generation pipeline."""
+    omni_ht = hl.read_table(omni)
+    mills_ht = hl.read_table(mills)
+    thousand_genomes_ht = hl.read_table(thousand_genomes)
+    hapmap_ht = hl.read_table(hapmap)
+
     # need to create spark cluster first before intiialising hail
     # sc = pyspark.SparkContext()
-    
+
     hl.stop()
     hl.init(default_reference="GRCh38")
     # s3 credentials required for user to access the datasets in farm flexible compute s3 environment
@@ -218,3 +233,7 @@ if __name__ == "__main__":
         f'{hdfs_dir}/chd_ukbb.qc_ac.ht', overwrite=True)
     allele_data_ht.write(
         f'{hdfs_dir}/chd_ukbb.allele_data.ht', overwrite=True)
+
+
+if __name__ == "__main__":
+    main(None)
