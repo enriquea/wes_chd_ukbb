@@ -1,4 +1,5 @@
-# Modified from @pavlos-pa10 
+"""Train, apply, and finalise a Random Forest model for variant QC."""
+# Modified from @pavlos-pa10
 # 22/01/2021
 # train and apply RF
 
@@ -395,95 +396,109 @@ def generate_final_rf_ht(
 ########################################
 
 
-def main(args):
+def run_train_rf(ht: hl.Table, args) -> str:
+    """Train the RF model, checkpoint results, persist run metadata, and return the run hash."""
+    # ht = hl.read_table(
+    #    f'{temp_dir}/ddd-elgh-ukbb/variant_qc/Sanger_table_for_RF_by_variant_type.ht')
+    run_hash = str(uuid.uuid4())[:8]
+    rf_runs = get_rf_runs(f'{tmp_dir}/rf_runs.json')
+    while run_hash in rf_runs:
+        run_hash = str(uuid.uuid4())[:8]
 
+    ht_result, rf_model = train_rf(ht, args)
+    print("Writing out ht_training data")
+    ht_result = ht_result.checkpoint(
+        get_rf(data="training", run_hash=run_hash).path, overwrite=True)
+    # f'{tmp_dir}/ddd-elgh-ukbb/Sanger_RF_training_data.ht', overwrite=True)
+    rf_runs[run_hash] = get_run_data(
+        vqsr_training=False,
+        transmitted_singletons=True,
+        test_intervals=args.test_intervals,
+        adj=True,
+        features_importance=hl.eval(ht_result.features_importance),
+        test_results=hl.eval(ht_result.test_results),
+    )
+
+    with hl.hadoop_open(f'{tmp_dir}/rf_runs.json', "w") as f:
+        json.dump(rf_runs, f)
+    pretty_print_runs(rf_runs)
+    logger.info("Saving RF model")
+    save_model(
+        rf_model, get_rf(data="model", run_hash=run_hash), overwrite=True)
+    # f'{tmp_dir}/ddd-elgh-ukbb/rf_model.model')
+    return run_hash
+
+
+def run_apply_rf(run_hash: str) -> hl.Table:
+    """Load RF model, apply it to the training table, checkpoint the result, and show a summary."""
+    logger.info(f"Applying RF model {run_hash}...")
+    rf_model = load_model(get_rf(data="model", run_hash=run_hash))
+
+    ht = get_rf(data="training", run_hash=run_hash).ht()
+    features = hl.eval(ht.features)
+    ht = apply_rf_model(ht, rf_model, features, label=LABEL_COL)
+    logger.info("Finished applying RF model")
+    ht = ht.annotate_globals(rf_hash=run_hash)
+    ht = ht.checkpoint(
+        get_rf("rf_result_chd_ukbb",
+               run_hash=run_hash).path, overwrite=True,
+    )
+
+    ht_summary = ht.group_by(
+        "tp", "fp", TRAIN_COL, LABEL_COL, PREDICTION_COL
+    ).aggregate(n=hl.agg.count())
+    ht_summary.show(n=20)
+    return ht
+
+
+def run_finalize_rf(run_hash: str, args) -> None:
+    """Load RF result and frequency tables, generate the final filtered RF table, and write to disk."""
+    # TODO: Adjust this step to run on the CHD-UKBB cohort
+
+    ht = hl.read_table(
+        f'{tmp_dir}/variant_qc/models/{run_hash}/rf_result_ac_added.ht')
+    # ht = create_grouped_bin_ht(
+    #    model_id=run_hash, overwrite=True)
+    freq_ht = hl.read_table(
+        f'{tmp_dir}/variant_qc/mt_sampleQC_FILTERED_FREQ_adj.ht')
+    freq = freq_ht[ht.key]
+
+    print("created bin ht")
+
+    ht = generate_final_rf_ht(
+        ht,
+        ac0_filter_expr=freq.freq[0].AC == 0,
+        ts_ac_filter_expr=freq.freq[1].AC == 1,
+        mono_allelic_fiter_expr=(freq.freq[1].AF == 1) | (
+            freq.freq[1].AF == 0),
+        snp_cutoff=args.snp_cutoff,
+        indel_cutoff=args.indel_cutoff,
+        determine_cutoff_from_bin=False,
+        aggregated_bin_ht=bin_ht,
+        bin_id=bin_ht.bin,
+        inbreeding_coeff_cutoff=INBREEDING_COEFF_HARD_CUTOFF,
+    )
+    # This column is added by the RF module based on a 0.5 threshold which doesn't correspond to what we use
+    # ht = ht.drop(ht[PREDICTION_COL])
+    ht.write(f'{tmp_dir}/rf_final.ht', overwrite=True)
+
+
+def main(args):
+    """Orchestrate RF training, application, and finalisation based on CLI flags."""
     print("importing main table")
     ht = hl.read_table(
         f'{nfs_dir}/hail_data/variant_qc/chd_ukbb.table_for_RF_by_variant_type_all_cols.ht')
 
     if args.train_rf:
-        # ht = hl.read_table(
-        #    f'{temp_dir}/ddd-elgh-ukbb/variant_qc/Sanger_table_for_RF_by_variant_type.ht')
-        run_hash = str(uuid.uuid4())[:8]
-        rf_runs = get_rf_runs(f'{tmp_dir}/rf_runs.json')
-        while run_hash in rf_runs:
-            run_hash = str(uuid.uuid4())[:8]
-
-        ht_result, rf_model = train_rf(ht, args)
-        print("Writing out ht_training data")
-        ht_result = ht_result.checkpoint(
-            get_rf(data="training", run_hash=run_hash).path, overwrite=True)
-        # f'{tmp_dir}/ddd-elgh-ukbb/Sanger_RF_training_data.ht', overwrite=True)
-        rf_runs[run_hash] = get_run_data(
-            vqsr_training=False,
-            transmitted_singletons=True,
-            test_intervals=args.test_intervals,
-            adj=True,
-            features_importance=hl.eval(ht_result.features_importance),
-            test_results=hl.eval(ht_result.test_results),
-        )
-
-        with hl.hadoop_open(f'{tmp_dir}/rf_runs.json', "w") as f:
-            json.dump(rf_runs, f)
-        pretty_print_runs(rf_runs)
-        logger.info("Saving RF model")
-        save_model(
-            rf_model, get_rf(data="model", run_hash=run_hash), overwrite=True)
-        # f'{tmp_dir}/ddd-elgh-ukbb/rf_model.model')
+        run_hash = run_train_rf(ht, args)
     else:
         run_hash = args.run_hash
 
     if args.apply_rf:
-
-        logger.info(f"Applying RF model {run_hash}...")
-        rf_model = load_model(get_rf(data="model", run_hash=run_hash))
-
-        ht = get_rf(data="training", run_hash=run_hash).ht()
-        features = hl.eval(ht.features)
-        ht = apply_rf_model(ht, rf_model, features, label=LABEL_COL)
-        logger.info("Finished applying RF model")
-        ht = ht.annotate_globals(rf_hash=run_hash)
-        ht = ht.checkpoint(
-            get_rf("rf_result_chd_ukbb",
-                   run_hash=run_hash).path, overwrite=True,
-        )
-
-        ht_summary = ht.group_by(
-            "tp", "fp", TRAIN_COL, LABEL_COL, PREDICTION_COL
-        ).aggregate(n=hl.agg.count())
-        ht_summary.show(n=20)
+        run_apply_rf(run_hash)
 
     if args.finalize:
-        
-        # TODO: Adjust this step to run on the CHD-UKBB cohort
-        
-        run_hash = args.run_hash
-        ht = hl.read_table(
-            f'{tmp_dir}/variant_qc/models/{run_hash}/rf_result_ac_added.ht')
-        # ht = create_grouped_bin_ht(
-        #    model_id=run_hash, overwrite=True)
-        freq_ht = hl.read_table(
-            f'{tmp_dir}/variant_qc/mt_sampleQC_FILTERED_FREQ_adj.ht')
-        freq = freq_ht[ht.key]
-
-        print("created bin ht")
-
-        ht = generate_final_rf_ht(
-            ht,
-            ac0_filter_expr=freq.freq[0].AC == 0,
-            ts_ac_filter_expr=freq.freq[1].AC == 1,
-            mono_allelic_fiter_expr=(freq.freq[1].AF == 1) | (
-                freq.freq[1].AF == 0),
-            snp_cutoff=args.snp_cutoff,
-            indel_cutoff=args.indel_cutoff,
-            determine_cutoff_from_bin=False,
-            aggregated_bin_ht=bin_ht,
-            bin_id=bin_ht.bin,
-            inbreeding_coeff_cutoff=INBREEDING_COEFF_HARD_CUTOFF,
-        )
-        # This column is added by the RF module based on a 0.5 threshold which doesn't correspond to what we use
-        # ht = ht.drop(ht[PREDICTION_COL])
-        ht.write(f'{tmp_dir}/rf_final.ht', overwrite=True)
+        run_finalize_rf(args.run_hash, args)
 
 
 if __name__ == "__main__":
