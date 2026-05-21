@@ -1,7 +1,14 @@
+"""
+Create Random Forest Hail table.
+
+Modified from @pavlos-pa10. Builds a Hail Table with the features required
+for random forest variant QC, based on gnomAD code.
+"""
+
 # eam
 # 2021-02-09
 
-# Modified from @pavlos-pa10 
+# Modified from @pavlos-pa10
 # Create Random Forest hail table
 # based on gnomad code
 
@@ -112,22 +119,8 @@ def generate_allele_data(mt: hl.MatrixTable) -> hl.Table:
     return ht
 
 
-if __name__ == "__main__":
-
-    hl.stop()
-    hl.init(default_reference="GRCh38")
-    # s3 credentials required for user to access the datasets in farm flexible compute s3 environment
-    # you may use your own here from your .s3fg file in your home directory
-
-    n_partitions = 500
-    
-    # Define the hail persistent storage directory
-    nfs_dir = NFS_DIR
-    hdfs_dir = f'{HDFS_DIR}/dir/hail_data'
-    # hdfs_checkpoint_dir = f'{HDFS_DIR}/checkpoint'
-    project_dir = f'{NFS_DIR}/projects/wes_chd_ukbb'
-
-    # ANNOTATION TABLES:
+def load_annotation_tables(nfs_dir: str, hdfs_dir: str) -> tuple:
+    """Load all annotation Hail Tables needed for RF feature construction."""
     truth_data_ht = hl.read_table(
         f'{nfs_dir}/hail_data/hts/truthset.ht')
     trio_stats_table = hl.read_table(
@@ -141,11 +134,21 @@ if __name__ == "__main__":
         *['ac_qc_samples_raw', 'ac_qc_samples_adj'])
     inbreeding_ht = hl.read_table(
         f'{hdfs_dir}/chd_ukbb.inbreeding.ht')
-    
-    group = "raw"
+    return truth_data_ht, trio_stats_table, allele_data_ht, allele_counts_ht, inbreeding_ht
 
-    mt = hl.read_matrix_table(
-        f'{nfs_dir}/hail_data/mts/chd_ukbb_split_v2_09092020.mt')
+
+def build_rf_ht(
+    mt: hl.MatrixTable,
+    truth_data_ht: hl.Table,
+    trio_stats_table: hl.Table,
+    allele_data_ht: hl.Table,
+    allele_counts_ht: hl.Table,
+    inbreeding_ht: hl.Table,
+    group: str,
+    n_partitions: int,
+    hdfs_dir: str,
+) -> hl.Table:
+    """Build and checkpoint the RF feature Hail Table from the split MatrixTable."""
     mt = mt.key_rows_by('locus').distinct_by_row(
     ).key_rows_by('locus', 'alleles')
     # mt = mt.select_entries(
@@ -198,5 +201,47 @@ if __name__ == "__main__":
     ht = median_impute_features(ht, {"variant_type": ht.variant_type})
     ht = ht.checkpoint(
         f'{hdfs_dir}/chd_ukbb.table_for_RF_by_variant_type_all_cols.ht', overwrite=True)
-    
+    return ht
+
+
+def main() -> None:
+    """Initialise Hail, build the RF feature table, and stop Hail."""
     hl.stop()
+    hl.init(default_reference="GRCh38")
+    # s3 credentials required for user to access the datasets in farm flexible compute s3 environment
+    # you may use your own here from your .s3fg file in your home directory
+
+    n_partitions = 500
+
+    # Define the hail persistent storage directory
+    nfs_dir = NFS_DIR
+    hdfs_dir = f'{HDFS_DIR}/dir/hail_data'
+    # hdfs_checkpoint_dir = f'{HDFS_DIR}/checkpoint'
+    project_dir = f'{NFS_DIR}/projects/wes_chd_ukbb'
+
+    truth_data_ht, trio_stats_table, allele_data_ht, allele_counts_ht, inbreeding_ht = (
+        load_annotation_tables(nfs_dir, hdfs_dir)
+    )
+
+    group = "raw"
+
+    mt = hl.read_matrix_table(
+        f'{nfs_dir}/hail_data/mts/chd_ukbb_split_v2_09092020.mt')
+
+    build_rf_ht(
+        mt=mt,
+        truth_data_ht=truth_data_ht,
+        trio_stats_table=trio_stats_table,
+        allele_data_ht=allele_data_ht,
+        allele_counts_ht=allele_counts_ht,
+        inbreeding_ht=inbreeding_ht,
+        group=group,
+        n_partitions=n_partitions,
+        hdfs_dir=hdfs_dir,
+    )
+
+    hl.stop()
+
+
+if __name__ == "__main__":
+    main()
