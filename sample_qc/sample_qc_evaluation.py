@@ -297,8 +297,8 @@ def compute_stratified_metrics_filter(ht: hl.Table, qc_metrics: List[str], strat
     return ht.annotate(pop_platform_filters=pop_platform_filters)
 
 
-def main(args):
-
+def main(args: argparse.Namespace) -> None:
+    """Run stratified sample QC evaluation and write results to disk."""
     # Start Hail
     hl.init(default_reference=args.default_ref_genome)
 
