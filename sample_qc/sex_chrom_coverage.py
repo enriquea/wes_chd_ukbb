@@ -126,8 +126,8 @@ def compute_mean_coverage(
     )
 
 
-def main(args):
-
+def main(args) -> None:
+    """Compute normalized sex chromosome coverage and write results to a Hail Table."""
     # nfs_dir = NFS_DIR  # use utils.config.NFS_DIR if needed
 
     hl.init(default_reference=args.default_reference)
@@ -144,6 +144,7 @@ def main(args):
 
     # read intervals for filtering variants (used mainly for exomes)
     def _get_interval_table(interval: str) -> Union[None, hl.Table]:
+        """Return a capture interval HailTable, or None if no interval name is given."""
         return get_capture_interval_ht(name=interval,
                                        reference=args.default_reference) if interval is not None else interval
 
