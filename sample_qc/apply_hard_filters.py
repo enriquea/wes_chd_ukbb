@@ -65,7 +65,7 @@ def make_hard_filters_expr(ht: hl.Table) -> hl.expr.SetExpression:
 def filter_and_write_qc_mt(exome_cohort: str, overwrite: bool) -> None:
     """Filter input MT to bi-allelic, high-callrate, common SNPs and write to disk."""
     # import unfiltered MT
-    mt = get_mt_data(dataset=exome_cohort, part='unfiltered')
+    mt = get_mt_data(dataset=exome_cohort, part='raw')
 
     logger.info("Filtering to bi-allelic, high-callrate, common SNPs for sample QC...")
 
@@ -78,14 +78,14 @@ def filter_and_write_qc_mt(exome_cohort: str, overwrite: bool) -> None:
     (mt
      .annotate_cols(callrate=hl.agg.fraction(hl.is_defined(mt.GT)))
      .naive_coalesce(1000)
-     .write(get_qc_mt_path(part='high_callrate_common_snp_biallelic', split=True),
+     .write(get_qc_mt_path(dataset=exome_cohort, part='high_callrate_common_snp_biallelic', split=True),
             overwrite=overwrite)
      )
 
 
-def load_qc_mt_with_metadata() -> hl.MatrixTable:
+def load_qc_mt_with_metadata(exome_cohort: str) -> hl.MatrixTable:
     """Load QC MatrixTable, unphase it, and annotate columns with sex-chrom coverage metadata."""
-    qc_mt = hl.read_matrix_table(get_qc_mt_path(part='high_callrate_common_snp_biallelic', split=True))
+    qc_mt = hl.read_matrix_table(get_qc_mt_path(dataset=exome_cohort, part='high_callrate_common_snp_biallelic', split=True))
 
     # unphase MT. required for imputing sex...
     qc_mt = unphase_mt(qc_mt)
@@ -164,7 +164,7 @@ def main(args):
     if not args.skip_filter_step:
         filter_and_write_qc_mt(exome_cohort=args.exome_cohort, overwrite=args.overwrite)
 
-    qc_mt = load_qc_mt_with_metadata()
+    qc_mt = load_qc_mt_with_metadata(exome_cohort=args.exome_cohort)
 
     qc_ht = compute_sex_annotations(qc_mt)
 

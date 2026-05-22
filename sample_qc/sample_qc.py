@@ -303,14 +303,14 @@ def export_sample_qc_tsv(ht: hl.Table, dataset: str, write_to_file: bool) -> Non
          )
 
 
-def annotate_pop_platform(ht: hl.Table) -> hl.Table:
+def annotate_pop_platform(ht: hl.Table, dataset: str) -> hl.Table:
     """Annotate the sample QC table with predicted population and QC platform labels."""
     # annotate sample population and platform qc info
     pop_qc = hl.read_table(
-        get_sample_qc_ht_path(part='population_qc')
+        get_sample_qc_ht_path(dataset=dataset, part='population_qc')
     )
     platform_qc = hl.read_table(
-        get_sample_qc_ht_path(part='platform_pca')
+        get_sample_qc_ht_path(dataset=dataset, part='platform_pca')
     )
 
     ann_expr = {'qc_pop': pop_qc[ht.s].predicted_pop,
@@ -360,7 +360,7 @@ def main(args):
     hl.init(default_reference=args.default_ref_genome)
 
     # Import unfiltered split MT
-    mt = get_mt_data(dataset=args.exome_cohort, part='unfiltered')
+    mt = get_mt_data(dataset=args.exome_cohort, part='raw')
 
     # Compute stratified sample_qc (biallelic and multi-allelic sites)
     sample_qc_ht = compute_sample_qc(mt)
@@ -370,7 +370,7 @@ def main(args):
         sample_qc_ht, args.exome_cohort, args.overwrite
     )
 
-    sample_qc_ht = annotate_pop_platform(sample_qc_ht)
+    sample_qc_ht = annotate_pop_platform(sample_qc_ht, dataset=args.exome_cohort)
 
     export_sample_qc_tsv(sample_qc_ht, args.exome_cohort, args.write_to_file)
 

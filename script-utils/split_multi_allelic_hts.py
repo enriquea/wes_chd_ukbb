@@ -1,6 +1,6 @@
 """
 Simple script to generate a fully bi-allelic MatrixTable
-from a MT contating multi-allelic variants.
+from a MT containing multi-allelic variants.
 
 All Call fields are also split/downcoded.
 

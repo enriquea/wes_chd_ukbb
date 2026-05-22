@@ -8,7 +8,7 @@ chromosome X and Y using an autosomal contig (e.g. chr20)
 
 import argparse
 import logging
-from typing import Optional, Union
+from typing import Optional
 
 import hail as hl
 
@@ -143,10 +143,12 @@ def main(args) -> None:
           )
 
     # read intervals for filtering variants (used mainly for exomes)
-    def _get_interval_table(interval: str) -> Union[None, hl.Table]:
+    def _get_interval_table(interval: Optional[str]) -> Optional[hl.Table]:
         """Return a capture interval HailTable, or None if no interval name is given."""
+        if interval is None:
+            return None
         return get_capture_interval_ht(name=interval,
-                                       reference=args.default_reference) if interval is not None else interval
+                                       reference=args.default_reference)
 
     ht = compute_mean_coverage(mt=mt,
                                normalization_contig=args.normalization_contig,

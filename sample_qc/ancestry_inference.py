@@ -35,7 +35,7 @@ def join_with_1kg(exome_cohort: str, default_reference: str) -> hl.MatrixTable:
     logger.info("Importing data...")
 
     # import unfiltered MT
-    mt = get_mt_data(dataset=exome_cohort, part='unfiltered')
+    mt = get_mt_data(dataset=exome_cohort, part='raw')
 
     # Read MT from 1kgenome and keep only locus defined in interval
     mt_1kg = get_1kg_mt(default_reference)

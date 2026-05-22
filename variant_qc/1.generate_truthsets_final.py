@@ -177,11 +177,6 @@ def get_truth_ht() -> Table:
 
 def main(args):
     """Run the truth-set and auxiliary table generation pipeline."""
-    omni_ht = hl.read_table(omni)
-    mills_ht = hl.read_table(mills)
-    thousand_genomes_ht = hl.read_table(thousand_genomes)
-    hapmap_ht = hl.read_table(hapmap)
-
     # need to create spark cluster first before intiialising hail
     # sc = pyspark.SparkContext()
 
