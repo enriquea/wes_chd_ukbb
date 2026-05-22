@@ -38,25 +38,25 @@ def annotate_release_samples(ht: hl.Table):
     return ht
 
 
-def main(args):
-    # Start Hail
-    hl.init(default_reference=args.default_ref_genome)
-
-    ds = args.exome_cohort
-
-    if args.run_test_mode:
+def load_mt(exome_cohort: str, run_test_mode: bool) -> hl.MatrixTable:
+    """Load the cohort MatrixTable, using test chr20 data if run_test_mode is True."""
+    if run_test_mode:
         logger.info('Running pipeline on test data...')
         mt = (get_mt_data(part='raw_chr20')
               .sample_rows(0.1)
               )
     else:
         logger.info('Running pipeline on MatrixTable wih adjusted genotypes...')
-        mt = hl.read_matrix_table(get_qc_mt_path(dataset=ds,
+        mt = hl.read_matrix_table(get_qc_mt_path(dataset=exome_cohort,
                                                  part='unphase_adj_genotypes',
                                                  split=True))
+    return mt
 
+
+def annotate_and_filter_samples(mt: hl.MatrixTable, exome_cohort: str) -> hl.MatrixTable:
+    """Annotate columns with sample QC fields and keep only release samples."""
     # 1. Annotate sample qc filters
-    sample_qc_path_ht = get_sample_qc_ht_path(dataset=args.exome_cohort,
+    sample_qc_path_ht = get_sample_qc_ht_path(dataset=exome_cohort,
                                               part='final_qc')
     sample_qc_ht = hl.read_table(sample_qc_path_ht)
     sample_qc_ht = (annotate_release_samples(sample_qc_ht)
@@ -70,7 +70,11 @@ def main(args):
     mt = (mt
           .filter_cols(mt.release_sample, keep=True)
           )
+    return mt
 
+
+def compute_pop_call_stats(mt: hl.MatrixTable) -> hl.Table:
+    """Compute per-population call stats and unnest AF, AC, and homozygote_count fields."""
     # 3. compute AFs stratified by population
     pops = mt.aggregate_cols(hl.agg.collect_as_set(mt.predicted_pop))
 
@@ -90,6 +94,20 @@ def main(args):
                           for p in pops
                           for f in field_call_stats})
              )
+    return ht_cs
+
+
+def main(args):
+    # Start Hail
+    hl.init(default_reference=args.default_ref_genome)
+
+    ds = args.exome_cohort
+
+    mt = load_mt(exome_cohort=ds, run_test_mode=args.run_test_mode)
+
+    mt = annotate_and_filter_samples(mt=mt, exome_cohort=ds)
+
+    ht_cs = compute_pop_call_stats(mt=mt)
 
     # export table
     (ht_cs

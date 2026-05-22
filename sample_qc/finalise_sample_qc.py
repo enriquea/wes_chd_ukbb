@@ -53,12 +53,9 @@ def get_related_samples_to_drop() -> hl.Table:
     )
 
 
-def main(args):
-    # Start Hail
-    hl.init(default_reference=args.default_ref_genome)
-
-    # Import raw split MT
-    mt = (get_mt_data(dataset=args.exome_cohort, part='raw', split=True)
+def load_raw_mt_and_sample_ht(exome_cohort: str) -> tuple:
+    """Import raw split MT and extract a sample-keyed cols HT."""
+    mt = (get_mt_data(dataset=exome_cohort, part='raw', split=True)
           .select_cols()
           )
 
@@ -67,49 +64,51 @@ def main(args):
           .key_by('s')
           )
 
-    # Annotate samples filters
-    sample_qc_filters = {}
+    return mt, ht
 
-    # 1. Add sample hard filters annotation expr
+
+def get_hard_filters_expr(ht: hl.Table, exome_cohort: str) -> dict:
+    """Read hard-filters HT and return annotation expr for hard_filters field."""
     sample_qc_hard_filters_ht = hl.read_table(
-        get_sample_qc_ht_path(dataset=args.exome_cohort,
+        get_sample_qc_ht_path(dataset=exome_cohort,
                               part='hard_filters')
     )
 
-    sample_qc_filters.update(
-        {'hard_filters': sample_qc_hard_filters_ht[ht.s]['hard_filters']}
-    )
+    return {'hard_filters': sample_qc_hard_filters_ht[ht.s]['hard_filters']}
 
-    # 2. Add population qc filters annotation expr
+
+def get_population_filters_expr(ht: hl.Table, exome_cohort: str) -> dict:
+    """Read population QC HT and return annotation expr for predicted_pop field."""
     sample_qc_pop_ht = hl.read_table(
-        get_sample_qc_ht_path(dataset=args.exome_cohort,
+        get_sample_qc_ht_path(dataset=exome_cohort,
                               part='population_qc')
     )
 
-    sample_qc_filters.update(
-        {'predicted_pop': sample_qc_pop_ht[ht.s]['predicted_pop']}
-    )
+    return {'predicted_pop': sample_qc_pop_ht[ht.s]['predicted_pop']}
 
-    # 3. Add relatedness filters annotation expr
+
+def get_relatedness_filters_expr(ht: hl.Table) -> dict:
+    """Read related-samples HT and return annotation expr for is_related field."""
     related_samples_to_drop = get_related_samples_to_drop()
     related_samples = hl.set(related_samples_to_drop
                              .aggregate(hl.agg.collect_as_set(related_samples_to_drop.node.id))
                              )
 
-    sample_qc_filters.update(
-        {'is_related': related_samples.contains(ht.s)}
-    )
+    return {'is_related': related_samples.contains(ht.s)}
 
-    # 4. Add stratified sample qc (population/platform) annotation expr
+
+def get_pop_platform_filters_expr(ht: hl.Table, exome_cohort: str) -> dict:
+    """Read stratified-metrics HT and return annotation expr for pop_platform_filters field."""
     sample_qc_pop_platform_filters_ht = hl.read_table(
-        get_sample_qc_ht_path(dataset=args.exome_cohort,
+        get_sample_qc_ht_path(dataset=exome_cohort,
                               part='stratified_metrics_filter')
     )
 
-    sample_qc_filters.update(
-        {'pop_platform_filters': sample_qc_pop_platform_filters_ht[ht.s]['pop_platform_filters']}
-    )
+    return {'pop_platform_filters': sample_qc_pop_platform_filters_ht[ht.s]['pop_platform_filters']}
 
+
+def annotate_sample_qc_filters(ht: hl.Table, sample_qc_filters: dict) -> hl.Table:
+    """Annotate sample HT with all QC filter fields and compute the pass_filters flag."""
     ht = (ht
           .annotate(**sample_qc_filters)
           )
@@ -125,21 +124,34 @@ def main(args):
           .annotate(**final_sample_qc_ann_expr)
           )
 
+    return ht
+
+
+def checkpoint_sample_qc_ht(ht: hl.Table,
+                             exome_cohort: str,
+                             overwrite: bool,
+                             write_to_file: bool) -> hl.Table:
+    """Checkpoint sample QC HT to disk and optionally export as BGZ-compressed TSV."""
     logger.info('Writing final sample qc HT to disk...')
-    output_path_ht = get_sample_qc_ht_path(dataset=args.exome_cohort,
+    output_path_ht = get_sample_qc_ht_path(dataset=exome_cohort,
                                            part='final_qc')
 
     ht = ht.checkpoint(
         output_path_ht,
-        overwrite=args.overwrite
+        overwrite=overwrite
     )
 
     # Export final sample QC annotations to file
-    if args.write_to_file:
+    if write_to_file:
         (ht.export(
             f'{output_path_ht}.tsv.bgz')
          )
 
+    return ht
+
+
+def write_release_mt(mt: hl.MatrixTable, exome_cohort: str, overwrite: bool) -> None:
+    """Unphase MT, annotate adj genotypes, filter entries, and write release MT."""
     ## Release final unphase MT with adjusted genotypes filtered
     mt = unphase_mt(mt)
     mt = annotate_adj(mt)
@@ -150,11 +162,50 @@ def main(args):
     logger.info('Writing unphase MT with adjusted genotypes to disk...')
     # write MT
     mt.write(
-        get_qc_mt_path(dataset=args.exome_cohort,
+        get_qc_mt_path(dataset=exome_cohort,
                        part='unphase_adj_genotypes',
                        split=True),
-        overwrite=args.overwrite
+        overwrite=overwrite
     )
+
+
+def main(args):
+    # Start Hail
+    hl.init(default_reference=args.default_ref_genome)
+
+    mt, ht = load_raw_mt_and_sample_ht(exome_cohort=args.exome_cohort)
+
+    # Annotate samples filters
+    sample_qc_filters = {}
+
+    # 1. Add sample hard filters annotation expr
+    sample_qc_filters.update(
+        get_hard_filters_expr(ht=ht, exome_cohort=args.exome_cohort)
+    )
+
+    # 2. Add population qc filters annotation expr
+    sample_qc_filters.update(
+        get_population_filters_expr(ht=ht, exome_cohort=args.exome_cohort)
+    )
+
+    # 3. Add relatedness filters annotation expr
+    sample_qc_filters.update(
+        get_relatedness_filters_expr(ht=ht)
+    )
+
+    # 4. Add stratified sample qc (population/platform) annotation expr
+    sample_qc_filters.update(
+        get_pop_platform_filters_expr(ht=ht, exome_cohort=args.exome_cohort)
+    )
+
+    ht = annotate_sample_qc_filters(ht=ht, sample_qc_filters=sample_qc_filters)
+
+    ht = checkpoint_sample_qc_ht(ht=ht,
+                                 exome_cohort=args.exome_cohort,
+                                 overwrite=args.overwrite,
+                                 write_to_file=args.write_to_file)
+
+    write_release_mt(mt=mt, exome_cohort=args.exome_cohort, overwrite=args.overwrite)
 
     # Stop Hail
     hl.stop()

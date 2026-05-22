@@ -279,43 +279,54 @@ def compute_stratified_metrics_filter(ht: hl.Table, qc_metrics: List[str], strat
     return ht.annotate(pop_platform_filters=pop_platform_filters)
 
 
-def main(args):
-    # Start Hail
-    hl.init(default_reference=args.default_ref_genome)
-
-    # Import unfiltered split MT
-    mt = get_mt_data(dataset=args.exome_cohort, part='unfiltered')
-
-    # Compute stratified sample_qc (biallelic and multi-allelic sites)
-    sample_qc_ht = compute_sample_qc(mt)
-
-    # Write HT with sample QC metrics
-    sample_qc_ht = sample_qc_ht.checkpoint(
-        get_sample_qc_ht_path(dataset=args.exome_cohort, part='high_conf_autosomes'),
-        overwrite=args.overwrite,
-        _read_if_exists=not args.overwrite
+def checkpoint_sample_qc(
+        ht: hl.Table,
+        dataset: str,
+        overwrite: bool,
+) -> hl.Table:
+    """Checkpoint the sample QC table with metrics to disk."""
+    ht = ht.checkpoint(
+        get_sample_qc_ht_path(dataset=dataset, part='high_conf_autosomes'),
+        overwrite=overwrite,
+        _read_if_exists=not overwrite
     )
 
-    # annotate sample population and platform qc info
-    pop_qc = hl.read_table(
-        get_sample_qc_ht_path(part='population_qc')
-    )
-    platform_qc = hl.read_table(
-        get_sample_qc_ht_path(part='platform_pca')
-    )
+    return ht
 
-    ann_expr = {'qc_pop': pop_qc[sample_qc_ht.s].predicted_pop,
-                'qc_platform': platform_qc[sample_qc_ht.s].qc_platform
-                }
 
-    sample_qc_ht = sample_qc_ht.annotate(**ann_expr)
-
+def export_sample_qc_tsv(ht: hl.Table, dataset: str, write_to_file: bool) -> None:
+    """Optionally export the sample QC table as a flattened BGZ-compressed TSV."""
     # Export HT to file
-    if args.write_to_file:
-        (sample_qc_ht.flatten().export(
-            f"{get_sample_qc_ht_path(dataset=args.exome_cohort, part='high_conf_autosomes')}.tsv.bgz")
+    if write_to_file:
+        (ht.flatten().export(
+            f"{get_sample_qc_ht_path(dataset=dataset, part='high_conf_autosomes')}.tsv.bgz")
          )
 
+
+def annotate_pop_platform(ht: hl.Table, dataset: str) -> hl.Table:
+    """Annotate the sample QC table with predicted population and QC platform labels."""
+    # annotate sample population and platform qc info
+    pop_qc = hl.read_table(
+        get_sample_qc_ht_path(dataset=dataset, part='population_qc')
+    )
+    platform_qc = hl.read_table(
+        get_sample_qc_ht_path(dataset=dataset, part='platform_pca')
+    )
+
+    ann_expr = {'qc_pop': pop_qc[ht.s].predicted_pop,
+                'qc_platform': platform_qc[ht.s].qc_platform
+                }
+
+    return ht.annotate(**ann_expr)
+
+
+def compute_and_checkpoint_stratified_filter(
+        ht: hl.Table,
+        dataset: str,
+        overwrite: bool,
+        write_to_file: bool,
+) -> hl.Table:
+    """Compute stratified metrics filter, checkpoint the result, and optionally export a TSV."""
     # Apply stratified sample filters based on defined QC metrics
     exome_qc_metrics = ['n_snp',
                         'r_ti_tv',
@@ -325,21 +336,47 @@ def main(args):
                         'r_het_hom_var']
 
     print('Computing stratified metrics filters...')
-    exome_pop_platform_filter_ht = compute_stratified_metrics_filter(sample_qc_ht,
+    exome_pop_platform_filter_ht = compute_stratified_metrics_filter(ht,
                                                                      exome_qc_metrics,
                                                                      ['qc_pop', 'qc_platform'])
 
     exome_pop_platform_filter_ht = exome_pop_platform_filter_ht.checkpoint(
-        get_sample_qc_ht_path(dataset=args.exome_cohort, part='stratified_metrics_filter'),
-        overwrite=args.overwrite,
-        _read_if_exists=not args.overwrite
+        get_sample_qc_ht_path(dataset=dataset, part='stratified_metrics_filter'),
+        overwrite=overwrite,
+        _read_if_exists=not overwrite
     )
 
     # Export HT to file
-    if args.write_to_file:
+    if write_to_file:
         (exome_pop_platform_filter_ht.export(
-            f"{get_sample_qc_ht_path(dataset=args.exome_cohort, part='stratified_metrics_filter')}.tsv.bgz")
+            f"{get_sample_qc_ht_path(dataset=dataset, part='stratified_metrics_filter')}.tsv.bgz")
          )
+
+    return exome_pop_platform_filter_ht
+
+
+def main(args):
+    # Start Hail
+    hl.init(default_reference=args.default_ref_genome)
+
+    # Import unfiltered split MT
+    mt = get_mt_data(dataset=args.exome_cohort, part='raw')
+
+    # Compute stratified sample_qc (biallelic and multi-allelic sites)
+    sample_qc_ht = compute_sample_qc(mt)
+
+    # Write HT with sample QC metrics
+    sample_qc_ht = checkpoint_sample_qc(
+        sample_qc_ht, args.exome_cohort, args.overwrite
+    )
+
+    sample_qc_ht = annotate_pop_platform(sample_qc_ht, dataset=args.exome_cohort)
+
+    export_sample_qc_tsv(sample_qc_ht, args.exome_cohort, args.write_to_file)
+
+    compute_and_checkpoint_stratified_filter(
+        sample_qc_ht, args.exome_cohort, args.overwrite, args.write_to_file
+    )
 
     # Stop Hail
     hl.stop()

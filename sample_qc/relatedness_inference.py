@@ -141,100 +141,112 @@ def get_related_samples_to_drop(rank_table: hl.Table, relatedness_ht: hl.Table) 
     return related_samples_to_drop_ranked
 
 
-def main(args):
+def filter_to_high_confidence_variants(mt_input_path: str,
+                                       maf_threshold: float,
+                                       overwrite: bool,
+                                       nfs_dir: str) -> None:
+    """Read the input MT, filter to bi-allelic high-callrate common SNPs, and write the result to disk."""
+    mt = hl.read_matrix_table(mt_input_path)
 
-    # Init Hail
-    hl.init(default_reference=args.default_reference)
+    # filter variants (bi-allelic, high-callrate, common SNPs)
+    logger.info(f"Filtering to bi-allelic, high-callrate, common SNPs ({maf_threshold}) for pc_relate...")
 
-    if not args.skip_compute_pc_relate:
+    mt = (mt
+          .filter_rows((hl.len(mt.alleles) == 2) & hl.is_snp(mt.alleles[0], mt.alleles[1]) &
+                       (hl.agg.mean(mt.GT.n_alt_alleles()) / 2 > maf_threshold) &
+                       (hl.agg.fraction(hl.is_defined(mt.GT)) > 0.99) &
+                       ~mt.was_split)
+          .repartition(500, shuffle=False)
+          )
 
-        if not args.skip_filter_data:
-            # Read MatrixTable
-            mt = hl.read_matrix_table(args.mt_input_path)
+    # keep only GT entry field and force to evaluate expression
+    (mt
+     .select_entries(mt.GT)
+     .write(f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.filtered_high_confidence_variants.mt',
+            overwrite=overwrite)
+     )
 
-            # filter variants (bi-allelic, high-callrate, common SNPs)
-            logger.info(f"Filtering to bi-allelic, high-callrate, common SNPs ({args.maf_threshold}) for pc_relate...")
 
-            mt = (mt
-                  .filter_rows((hl.len(mt.alleles) == 2) & hl.is_snp(mt.alleles[0], mt.alleles[1]) &
-                               (hl.agg.mean(mt.GT.n_alt_alleles()) / 2 > args.maf_threshold) &
-                               (hl.agg.fraction(hl.is_defined(mt.GT)) > 0.99) &
-                               ~mt.was_split)
-                  .repartition(500, shuffle=False)
-                  )
+def prune_ld_variants(nfs_dir: str, r2: float, overwrite: bool) -> None:
+    """Read the filtered MT, prune variants in LD, and write the LD-pruned MT to disk."""
+    mt = hl.read_matrix_table(f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.filtered_high_confidence_variants.mt')
 
-            # keep only GT entry field and force to evaluate expression
-            (mt
-             .select_entries(mt.GT)
-             .write(f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.filtered_high_confidence_variants.mt',
-                    overwrite=args.overwrite)
-             )
+    # LD pruning
+    # Avoid filtering / missingness entries (genotypes) before run LP pruning
+    # Zulip Hail support issue -> "BlockMatrix trouble when running pc_relate"
+    # mt = mt.unfilter_entries()
 
-        mt = hl.read_matrix_table(f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.filtered_high_confidence_variants.mt')
+    # Prune variants in linkage disequilibrium.
+    # Return a table with nearly uncorrelated variants
 
-        if not args.skip_prune_ld:
-            # LD pruning
-            # Avoid filtering / missingness entries (genotypes) before run LP pruning
-            # Zulip Hail support issue -> "BlockMatrix trouble when running pc_relate"
-            # mt = mt.unfilter_entries()
+    logger.info(f'Pruning variants in LD from MT with {mt.count_rows()} variants...')
 
-            # Prune variants in linkage disequilibrium.
-            # Return a table with nearly uncorrelated variants
+    pruned_variant_table = hl.ld_prune(mt.GT, r2=r2)
 
-            logger.info(f'Pruning variants in LD from MT with {mt.count_rows()} variants...')
+    # Keep LD-pruned variants
+    pruned_mt = (mt
+                 .filter_rows(hl.is_defined(pruned_variant_table[mt.row_key]), keep=True)
+                 )
+    pruned_mt.write(f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.ld_pruned.mt', overwrite=overwrite)
 
-            pruned_variant_table = hl.ld_prune(mt.GT, r2=args.r2)
 
-            # Keep LD-pruned variants
-            pruned_mt = (mt
-                         .filter_rows(hl.is_defined(pruned_variant_table[mt.row_key]), keep=True)
-                         )
-            pruned_mt.write(f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.ld_pruned.mt', overwrite=args.overwrite)
+def run_pca_and_pc_relate(nfs_dir: str,
+                           min_individual_maf: float,
+                           min_kinship: float,
+                           overwrite: bool) -> None:
+    """Read the LD-pruned MT, run HWE-normalised PCA, then run PC-Relate and write the relatedness table to disk."""
+    pruned_mt = hl.read_matrix_table(f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.ld_pruned.mt')
+    v, s = pruned_mt.count()
+    logger.info(f'{s} samples, {v} variants found in LD-pruned MT')
 
-        pruned_mt = hl.read_matrix_table(f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.ld_pruned.mt')
-        v, s = pruned_mt.count()
-        logger.info(f'{s} samples, {v} variants found in LD-pruned MT')
+    pruned_mt = pruned_mt.select_entries(
+        GT=hl.unphased_diploid_gt_index_call(pruned_mt.GT.n_alt_alleles()))
 
-        pruned_mt = pruned_mt.select_entries(
-            GT=hl.unphased_diploid_gt_index_call(pruned_mt.GT.n_alt_alleles()))
+    # run pc_relate method...compute all stats
+    logger.info('Running PCA for PC-Relate...')
+    eig, scores, _ = hl.hwe_normalized_pca(pruned_mt.GT, k=10, compute_loadings=False)
+    scores.write(f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.pruned.pca_scores_for_pc_relate.ht',
+                 overwrite=overwrite)
 
-        # run pc_relate method...compute all stats
-        logger.info('Running PCA for PC-Relate...')
-        eig, scores, _ = hl.hwe_normalized_pca(pruned_mt.GT, k=10, compute_loadings=False)
-        scores.write(f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.pruned.pca_scores_for_pc_relate.ht',
-                     overwrite=args.overwrite)
+    logger.info(f'Running PC-Relate...')
+    scores = hl.read_table(f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.pruned.pca_scores_for_pc_relate.ht')
+    relatedness_ht = hl.pc_relate(call_expr=pruned_mt.GT,
+                                  min_individual_maf=min_individual_maf,
+                                  scores_expr=scores[pruned_mt.col_key].scores,
+                                  block_size=4096,
+                                  min_kinship=min_kinship,
+                                  statistics='all')
 
-        logger.info(f'Running PC-Relate...')
-        scores = hl.read_table(f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.pruned.pca_scores_for_pc_relate.ht')
-        relatedness_ht = hl.pc_relate(call_expr=pruned_mt.GT,
-                                      min_individual_maf=args.min_individual_maf,
-                                      scores_expr=scores[pruned_mt.col_key].scores,
-                                      block_size=4096,
-                                      min_kinship=args.min_kinship,
-                                      statistics='all')
+    logger.info(f'Writing relatedness table...')
+    # Write/export table to file
+    relatedness_ht.write(
+        output=f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.relatedness_kinship.ht',
+        overwrite=overwrite)
 
-        logger.info(f'Writing relatedness table...')
-        # Write/export table to file
-        relatedness_ht.write(
-            output=f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.relatedness_kinship.ht',
-            overwrite=args.overwrite)
+    # Write PCs table to file (if specified)
+    # if args.write_to_file:
+    #    # Export table to file
+    #    relatedness_ht.export(output=f'{args.ht_output_path}.tsv.bgz')
 
-        # Write PCs table to file (if specified)
-        # if args.write_to_file:
-        #    # Export table to file
-        #    relatedness_ht.export(output=f'{args.ht_output_path}.tsv.bgz')
 
+def load_relatedness_table(nfs_dir: str) -> hl.Table:
+    """Read the relatedness kinship table from disk and flatten/rename/repartition it."""
     # retrieve maximal independent set of related samples
     logger.info('Getting optimal set of related samples to prune...')
 
     relatedness_ht = hl.read_table(f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.relatedness_kinship.ht')
-    
+
     relatedness_ht = (relatedness_ht
                       .flatten()
-                      .rename({'i.s':'i', 'j.s':'j'})
+                      .rename({'i.s': 'i', 'j.s': 'j'})
                       .repartition(100)
-                     )
+                      )
 
+    return relatedness_ht
+
+
+def build_rank_table():
+    """Import fam info and sample meta-data to build a sample retention-priority rank table."""
     # import trios info
     fam = import_fam_ht()
     mat_ids = hl.set(fam.mat_id.collect())
@@ -245,6 +257,14 @@ def main(args):
         get_sample_meta_data()
     )
 
+    return tb_rank, mat_ids, fat_ids
+
+
+def compute_samples_to_remove(relatedness_ht: hl.Table,
+                               tb_rank: hl.Table,
+                               mat_ids: hl.SetExpression,
+                               fat_ids: hl.SetExpression) -> hl.Table:
+    """Apply kinship threshold, annotate pair groups, and return the maximal independent set of samples to remove."""
     # apply min kinship to consider related pairs
     relatedness_ht = (relatedness_ht.
                       filter(relatedness_ht.kin > MIN_KINSHIP))
@@ -278,18 +298,71 @@ def main(args):
 
     related_samples_to_remove = hl.Table.union(*tbs)
 
+    return related_samples_to_remove
+
+
+def checkpoint_and_export_result(related_samples_to_remove: hl.Table,
+                                 nfs_dir: str,
+                                 overwrite: bool,
+                                 write_to_file: bool) -> hl.Table:
+    """Checkpoint the samples-to-remove table and optionally export it as a flat TSV file."""
     related_samples_to_remove.describe()
 
     related_samples_to_remove = related_samples_to_remove.checkpoint(
         f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.related_samples_to_remove.ht',
-        overwrite=args.overwrite)
-    
-    if args.write_to_file:
+        overwrite=overwrite)
+
+    if write_to_file:
         (related_samples_to_remove
          .flatten()
          .export(f'{nfs_dir}/hail_data/sample_qc/chd_ukbb.related_samples_to_remove.tsv')
          )
 
+    return related_samples_to_remove
+
+
+def main(args):
+
+    # Init Hail
+    hl.init(default_reference=args.default_reference)
+
+    if not args.skip_compute_pc_relate:
+
+        if not args.skip_filter_data:
+            filter_to_high_confidence_variants(
+                mt_input_path=args.mt_input_path,
+                maf_threshold=args.maf_threshold,
+                overwrite=args.overwrite,
+                nfs_dir=nfs_dir,
+            )
+
+        if not args.skip_prune_ld:
+            prune_ld_variants(nfs_dir=nfs_dir, r2=args.r2, overwrite=args.overwrite)
+
+        run_pca_and_pc_relate(
+            nfs_dir=nfs_dir,
+            min_individual_maf=args.min_individual_maf,
+            min_kinship=args.min_kinship,
+            overwrite=args.overwrite,
+        )
+
+    relatedness_ht = load_relatedness_table(nfs_dir=nfs_dir)
+
+    tb_rank, mat_ids, fat_ids = build_rank_table()
+
+    related_samples_to_remove = compute_samples_to_remove(
+        relatedness_ht=relatedness_ht,
+        tb_rank=tb_rank,
+        mat_ids=mat_ids,
+        fat_ids=fat_ids,
+    )
+
+    checkpoint_and_export_result(
+        related_samples_to_remove=related_samples_to_remove,
+        nfs_dir=nfs_dir,
+        overwrite=args.overwrite,
+        write_to_file=args.write_to_file,
+    )
 
     hl.stop()
 

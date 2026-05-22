@@ -3,7 +3,6 @@
 
 
 """
-
 Retrieving variant/genotype/sample information
 after extensive filtering from a Hail MatrixTable.
 
@@ -67,7 +66,7 @@ project_dir = f'{nfs_dir}/projects/wes_chd_ukbb'
 
 
 def parse_geneset(geneset_file: str) -> hl.expr.SetExpression:
-    # parse geneset file
+    """Parse a one-column TSV gene-set file and return its contents as a Hail set."""
     geneset = hl.import_table(paths=geneset_file,
                               no_header=True,
                               delimiter="\t",
@@ -78,17 +77,12 @@ def parse_geneset(geneset_file: str) -> hl.expr.SetExpression:
     return geneset
 
 
-def main(args):
-    ## Init Hail
-    hl.init(default_reference=args.default_ref_genome)
-
-    ## Import unfiltered MT with adjusted genotypes
-    ds = args.exome_cohort
-    mt = hl.read_matrix_table(get_qc_mt_path(dataset=ds,
+def load_mt_with_vep(dataset: str) -> hl.MatrixTable:
+    """Load the unfiltered adjusted-genotype MT and annotate VEP fields from the VEP HailTable."""
+    mt = hl.read_matrix_table(get_qc_mt_path(dataset=dataset,
                                              part='unphase_adj_genotypes',
                                              split=True))
 
-    ## Add VEP-annotated fields
     vep_ht = get_vep_annotation_ht()
 
     mt = (mt
@@ -97,80 +91,91 @@ def main(args):
                          DOMAINS=vep_ht[mt.row_key].vep.DOMAINS,
                          SYMBOL=vep_ht[mt.row_key].vep.SYMBOL)
           )
+    return mt
 
-    ## Parse geneset
-    geneset = parse_geneset(args.geneset_file)
 
-    ## Filter to geneset
+def filter_to_geneset(mt: hl.MatrixTable,
+                      geneset: hl.expr.SetExpression,
+                      nfs_tmp: str) -> hl.MatrixTable:
+    """Filter MT rows to variants in the gene set and checkpoint to a temp path."""
     mt = (mt
           .filter_rows(hl.set(geneset).contains(mt.SYMBOL))
           .checkpoint(f'{nfs_tmp}/tmp.mt',
                       overwrite=True)
           )
+    return mt
 
-    ## Sample-QC filtering
-    if args.apply_sample_qc_filtering:
-        logger.info('Applying per sample QC filtering...')
 
-        mt = apply_sample_qc_filtering(mt)
+def apply_sample_qc(mt: hl.MatrixTable, hdfs_dir: str) -> hl.MatrixTable:
+    """Apply per-sample QC filtering and checkpoint the result."""
+    logger.info('Applying per sample QC filtering...')
 
-        logger.info('Writing sample qc-filtered MT to disk...')
-        mt = (mt
-              .checkpoint(f'{hdfs_dir}/chd_ukbb.sample_qc_filtered.mt',
-                          overwrite=True)
-              )
+    mt = apply_sample_qc_filtering(mt)
 
-    ## Variant-QC filtering
-    if args.apply_variant_qc_filtering:
-        logger.info('Applying per variant QC filtering...')
+    logger.info('Writing sample qc-filtered MT to disk...')
+    mt = (mt
+          .checkpoint(f'{hdfs_dir}/chd_ukbb.sample_qc_filtered.mt',
+                      overwrite=True)
+          )
+    return mt
 
-        mt = apply_variant_qc_filtering(mt)
 
-        # write hard filtered MT to disk
-        logger.info('Writing variant qc-filtered mt with rare variants (internal maf 0.01) to disk...')
-        mt = (mt
-              .checkpoint(f'{hdfs_dir}/chd_ukbb.variant_qc_filtered.mt',
-                          overwrite=True)
-              )
+def apply_variant_qc(mt: hl.MatrixTable, hdfs_dir: str) -> hl.MatrixTable:
+    """Apply per-variant QC filtering and checkpoint the result."""
+    logger.info('Applying per variant QC filtering...')
 
-    ## Filtering by AFs
+    mt = apply_variant_qc_filtering(mt)
 
-    # allelic frequency cut-off
-    maf_cutoff = args.af_max_threshold
+    # write hard filtered MT to disk
+    logger.info('Writing variant qc-filtered mt with rare variants (internal maf 0.01) to disk...')
+    mt = (mt
+          .checkpoint(f'{hdfs_dir}/chd_ukbb.variant_qc_filtered.mt',
+                      overwrite=True)
+          )
+    return mt
 
-    if args.apply_af_filtering:
-        # Annotate allelic frequencies from external source,
-        # and compute internal AF on samples passing QC
-        af_ht = get_af_annotation_ht()
 
-        mt = (mt
-              .annotate_rows(**af_ht[mt.row_key])
-              )
+def apply_af_filter(mt: hl.MatrixTable,
+                    maf_cutoff: float,
+                    hdfs_dir: str) -> hl.MatrixTable:
+    """Annotate AF fields from external source and filter rows by allele-frequency cutoff."""
+    # Annotate allelic frequencies from external source,
+    # and compute internal AF on samples passing QC
+    af_ht = get_af_annotation_ht()
 
-        filter_expressions = [af_filter_expr(mt, 'internal_af', af_cutoff=maf_cutoff),
-                              af_filter_expr(mt, 'gnomad_genomes_af', af_cutoff=maf_cutoff),
-                              af_filter_expr(mt, 'gnomAD_AF', af_cutoff=maf_cutoff),
-                              af_filter_expr(mt, 'ger_af', af_cutoff=maf_cutoff),
-                              af_filter_expr(mt, 'rumc_af', af_cutoff=maf_cutoff),
-                              af_filter_expr(mt, 'bonn_af', af_cutoff=maf_cutoff)
-                              ]
+    mt = (mt
+          .annotate_rows(**af_ht[mt.row_key])
+          )
 
-        mt = (mt
-              .filter_rows(functools.reduce(operator.iand, filter_expressions), keep=True)
-              )
+    filter_expressions = [af_filter_expr(mt, 'internal_af', af_cutoff=maf_cutoff),
+                          af_filter_expr(mt, 'gnomad_genomes_af', af_cutoff=maf_cutoff),
+                          af_filter_expr(mt, 'gnomAD_AF', af_cutoff=maf_cutoff),
+                          af_filter_expr(mt, 'ger_af', af_cutoff=maf_cutoff),
+                          af_filter_expr(mt, 'rumc_af', af_cutoff=maf_cutoff),
+                          af_filter_expr(mt, 'bonn_af', af_cutoff=maf_cutoff)
+                          ]
 
-        logger.info('Writing AF-filtered MT to disk...')
-        mt = (mt
-              .checkpoint(f'{hdfs_dir}/chd_ukbb.qc_final.rare.mt',
-                          overwrite=True)
-              )
+    mt = (mt
+          .filter_rows(functools.reduce(operator.iand, filter_expressions), keep=True)
+          )
 
-    ## Filter to bi-allelic variants
-    if args.filter_biallelic:
-        logger.info('Running burden test on biallelic variants...')
-        mt = mt.filter_rows(bi_allelic_expr(mt))
+    logger.info('Writing AF-filtered MT to disk...')
+    mt = (mt
+          .checkpoint(f'{hdfs_dir}/chd_ukbb.qc_final.rare.mt',
+                      overwrite=True)
+          )
+    return mt
 
-    ## Generate blind sample IDs
+
+def filter_biallelic(mt: hl.MatrixTable) -> hl.MatrixTable:
+    """Filter MT to bi-allelic variants only."""
+    logger.info('Running burden test on biallelic variants...')
+    mt = mt.filter_rows(bi_allelic_expr(mt))
+    return mt
+
+
+def add_blind_ids_and_sample_meta(mt: hl.MatrixTable) -> hl.MatrixTable:
+    """Add blind sample IDs, annotate sample metadata, and filter to cases/controls."""
     mt = mt.add_col_index()
 
     mt = (mt
@@ -186,14 +191,21 @@ def main(args):
     mt = (mt
           .filter_cols(mt['phe.is_case'] | mt['phe.is_control'])
           )
+    return mt
 
-    ## Annotate pathogenic scores
+
+def annotate_scores_and_variant_id(mt: hl.MatrixTable) -> hl.MatrixTable:
+    """Annotate pathogenic scores from VEP scores HailTable and add variant ID."""
     ht_scores = get_vep_scores_ht()
     mt = mt.annotate_rows(**ht_scores[mt.row_key])
 
     ## Annotate variants ID
     mt = annotate_variant_id(mt)
+    return mt
 
+
+def aggregate_and_export(mt: hl.MatrixTable, output_file: str) -> None:
+    """Aggregate per-genotype counts into row annotations, select columns, and export as TSV."""
     # annotate samples
     ann_expr = {'n_het_cases': hl.agg.filter(mt.GT.is_het() & mt['phe.is_case'], hl.agg.count()),
                 'n_hom_cases': hl.agg.filter(mt.GT.is_hom_var() & mt['phe.is_case'], hl.agg.count()),
@@ -222,8 +234,48 @@ def main(args):
 
     # export results
     (ht
-     .export(args.output_file)
+     .export(output_file)
      )
+
+
+def main(args):
+    ## Init Hail
+    hl.init(default_reference=args.default_ref_genome)
+
+    ## Import unfiltered MT with adjusted genotypes and add VEP-annotated fields
+    mt = load_mt_with_vep(args.exome_cohort)
+
+    ## Parse geneset and filter to geneset
+    geneset = parse_geneset(args.geneset_file)
+    mt = filter_to_geneset(mt, geneset, nfs_tmp)
+
+    ## Sample-QC filtering
+    if args.apply_sample_qc_filtering:
+        mt = apply_sample_qc(mt, hdfs_dir)
+
+    ## Variant-QC filtering
+    if args.apply_variant_qc_filtering:
+        mt = apply_variant_qc(mt, hdfs_dir)
+
+    ## Filtering by AFs
+    # allelic frequency cut-off
+    maf_cutoff = args.af_max_threshold
+
+    if args.apply_af_filtering:
+        mt = apply_af_filter(mt, maf_cutoff, hdfs_dir)
+
+    ## Filter to bi-allelic variants
+    if args.filter_biallelic:
+        mt = filter_biallelic(mt)
+
+    ## Generate blind sample IDs and annotate sample metadata
+    mt = add_blind_ids_and_sample_meta(mt)
+
+    ## Annotate pathogenic scores and variant ID
+    mt = annotate_scores_and_variant_id(mt)
+
+    ## Aggregate genotype counts and export
+    aggregate_and_export(mt, args.output_file)
 
 
 if __name__ == '__main__':

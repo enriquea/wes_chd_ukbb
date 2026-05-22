@@ -1,7 +1,3 @@
-import argparse
-import hail as hl
-import os
-
 """
 Simple script to read VCF(s) file(s) and write as Hail MatrixTable.
 VCFs requirements: version 4.2, multi sample-called and BGZ compressed.
@@ -16,9 +12,12 @@ nohup python vcf2mt.py \
       > nohup.log 2>&1 &
 """
 
+import argparse
+import hail as hl
 
-def main(args):
 
+def main(args) -> None:
+    """Import VCF(s), optionally split multi-allelic sites, and write as a Hail MatrixTable."""
     # Start Hail on local mode
     hl.init(default_reference='GRCh38')
 
@@ -26,19 +25,19 @@ def main(args):
     # vcf_files_list = get_files_names(args.vcf_path, ext='vcf.gz')
 
     # import VCF(s) as Hail MatrixTable
-    mt = hl.import_vcf(path=args.vcf_path, 
+    mt = hl.import_vcf(path=args.vcf_path,
                        force_bgz=args.force_bgz)
-    
+
     if args.split_multi:
         mt = hl.split_multi_hts(mt)
-    
+
     # write MatrixTable
     mt.write(output=args.output_path,
              overwrite=args.overwrite)
 
     # Stop Hail
     hl.stop()
-    
+
     print("Finished!")
 
 

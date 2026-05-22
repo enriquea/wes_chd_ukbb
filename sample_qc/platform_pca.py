@@ -1,40 +1,41 @@
-# Adapted from gnomad.methods
+"""
+Adapted from gnomad.methods.
 
-# Perform sample platform QC base on principal component analysis
+Perform sample platform QC based on principal component analysis.
 
-# usage: platform_pca.py [-h] [--mt_input_path MT_INPUT_PATH]
-#                        [--ht_output_path HT_OUTPUT_PATH]
-#                        [--ht_intervals HT_INTERVALS] [--write_to_file]
-#                        [--overwrite] [--default_ref_genome DEFAULT_REF_GENOME]
-#                        [--binarization_threshold BINARIZATION_THRESHOLD]
-#                        [--hdbscan_min_cluster_size HDBSCAN_MIN_CLUSTER_SIZE]
-#                        [--hdbscan_min_samples HDBSCAN_MIN_SAMPLES]
-#
-# optional arguments:
-#   -h, --help            show this help message and exit
-#   --mt_input_path MT_INPUT_PATH
-#                         Path to input Hail MatrixTable
-#   --ht_output_path HT_OUTPUT_PATH
-#                         Path to output HailTable with platform PCs
-#   --ht_intervals HT_INTERVALS
-#                         HailTable of intervals to use in the computation
-#   --write_to_file       Write output to BGZ-compressed file
-#   --overwrite           Overwrite results in HT output path if already
-#                         exists...
-#   --default_ref_genome DEFAULT_REF_GENOME
-#                         Default reference genome to start Hail
-#   --binarization_threshold BINARIZATION_THRESHOLD
-#                         If set, the callrate MT is transformed to a 0/1 value
-#                         MT based on the threshold. E.g. with the default
-#                         threshold of 0.25, all entries with a callrate < 0.25
-#                         are considered as 0s, others as 1s. Set to None if no
-#                         threshold desired
-#   --hdbscan_min_cluster_size HDBSCAN_MIN_CLUSTER_SIZE
-#                         HDBSCAN `min_cluster_size` parameter. If not specified
-#                         the smallest of 500 and 0.1*n_samples will be used.
-#   --hdbscan_min_samples HDBSCAN_MIN_SAMPLES
-#                         HDBSCAN `min_samples` parameter.
-#
+usage: platform_pca.py [-h] [--mt_input_path MT_INPUT_PATH]
+                       [--ht_output_path HT_OUTPUT_PATH]
+                       [--ht_intervals HT_INTERVALS] [--write_to_file]
+                       [--overwrite] [--default_ref_genome DEFAULT_REF_GENOME]
+                       [--binarization_threshold BINARIZATION_THRESHOLD]
+                       [--hdbscan_min_cluster_size HDBSCAN_MIN_CLUSTER_SIZE]
+                       [--hdbscan_min_samples HDBSCAN_MIN_SAMPLES]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --mt_input_path MT_INPUT_PATH
+                        Path to input Hail MatrixTable
+  --ht_output_path HT_OUTPUT_PATH
+                        Path to output HailTable with platform PCs
+  --ht_intervals HT_INTERVALS
+                        HailTable of intervals to use in the computation
+  --write_to_file       Write output to BGZ-compressed file
+  --overwrite           Overwrite results in HT output path if already
+                        exists...
+  --default_ref_genome DEFAULT_REF_GENOME
+                        Default reference genome to start Hail
+  --binarization_threshold BINARIZATION_THRESHOLD
+                        If set, the callrate MT is transformed to a 0/1 value
+                        MT based on the threshold. E.g. with the default
+                        threshold of 0.25, all entries with a callrate < 0.25
+                        are considered as 0s, others as 1s. Set to None if no
+                        threshold desired
+  --hdbscan_min_cluster_size HDBSCAN_MIN_CLUSTER_SIZE
+                        HDBSCAN `min_cluster_size` parameter. If not specified
+                        the smallest of 500 and 0.1*n_samples will be used.
+  --hdbscan_min_samples HDBSCAN_MIN_SAMPLES
+                        HDBSCAN `min_samples` parameter.
+"""
 
 import logging
 from typing import List, Optional, Tuple
@@ -221,6 +222,49 @@ def assign_platform_from_pcs(
     return ht
 
 
+def filter_pca_scores_to_optimal_pcs(
+        ht_pca: hl.Table,
+        eigenvalues: List[float],
+) -> hl.Table:
+    """Filter PCA scores table to the optimal number of PCs explaining 99% of variance."""
+    # normalize eigenvalues (0-100)
+    eigenvalues_norm = [x/sum(eigenvalues)*100 for x in eigenvalues]
+
+    # compute eigenvalues cumulative sum
+    ev_cumsum = hl.array_scan(lambda i, j: i + j, 0,
+                              hl.array(eigenvalues_norm))
+
+    # getting optimal number of PCs (those which explain 99% of the variance)
+    n_optimal_pcs = hl.eval(
+        hl.len(ev_cumsum.filter(lambda x: x < 99.0)))
+
+    logger.info(
+        f"Keep only principal components which explain up to 99% of the variance. Number of optimal PCs found: {n_optimal_pcs}")
+
+    # filter out uninformative PCs
+    ht_pca = ht_pca.annotate(scores=ht_pca.scores[:n_optimal_pcs])
+
+    return ht_pca
+
+
+def write_platform_ht(
+        ht_platform: hl.Table,
+        ht_output_path: str,
+        overwrite: bool,
+        write_to_file: bool,
+) -> None:
+    """Write platform HailTable to disk and optionally export as a BGZ-compressed TSV."""
+    # write HT
+    ht_platform.write(output=ht_output_path,
+                      overwrite=overwrite)
+
+    # export to file if true
+    if write_to_file:
+        (ht_platform
+         .export(f'{ht_output_path}.tsv.bgz')
+         )
+
+
 def main(args):
 
     # init hail
@@ -242,23 +286,9 @@ def main(args):
     # run pca
     eigenvalues, ht_pca, _ = run_platform_pca(callrate_mt=mt_callrate,
                                               binarization_threshold=args.binarization_threshold)
-    
-    # normalize eigenvalues (0-100)
-    eigenvalues_norm = [x/sum(eigenvalues)*100 for x in eigenvalues]
-    
-    # compute eigenvalues cumulative sum
-    ev_cumsum = hl.array_scan(lambda i, j: i + j, 0, 
-                              hl.array(eigenvalues_norm))
-    
-    # getting optimal number of PCs (those which explain 99% of the variance)
-    n_optimal_pcs = hl.eval(
-        hl.len(ev_cumsum.filter(lambda x: x < 99.0)))
-    
-    logger.info(
-        f"Keep only principal components which explain up to 99% of the variance. Number of optimal PCs found: {n_optimal_pcs}")
-    
-    # filter out uninformative PCs
-    ht_pca = ht_pca.annotate(scores=ht_pca.scores[:n_optimal_pcs])
+
+    ht_pca = filter_pca_scores_to_optimal_pcs(ht_pca=ht_pca,
+                                              eigenvalues=eigenvalues)
 
     # apply unsupervised clustering on PCs to infer samples platform
     ht_platform = assign_platform_from_pcs(platform_pca_scores_ht=ht_pca,
@@ -268,15 +298,10 @@ def main(args):
 
     ht_platform.show()
 
-    # write HT
-    ht_platform.write(output=args.ht_output_path,
-                      overwrite=args.overwrite)
-
-    # export to file if true
-    if args.write_to_file:
-        (ht_platform
-         .export(f'{args.ht_output_path}.tsv.bgz')
-         )
+    write_platform_ht(ht_platform=ht_platform,
+                      ht_output_path=args.ht_output_path,
+                      overwrite=args.overwrite,
+                      write_to_file=args.write_to_file)
 
     hl.stop()
 

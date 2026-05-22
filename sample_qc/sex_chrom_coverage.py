@@ -8,7 +8,7 @@ chromosome X and Y using an autosomal contig (e.g. chr20)
 
 import argparse
 import logging
-from typing import Optional, Union
+from typing import Optional
 
 import hail as hl
 
@@ -126,8 +126,8 @@ def compute_mean_coverage(
     )
 
 
-def main(args):
-
+def main(args) -> None:
+    """Compute normalized sex chromosome coverage and write results to a Hail Table."""
     # nfs_dir = NFS_DIR  # use utils.config.NFS_DIR if needed
 
     hl.init(default_reference=args.default_reference)
@@ -135,7 +135,7 @@ def main(args):
     logger.info("Importing data...")
 
     # import unfiltered MT
-    mt = get_mt_data(dataset=args.exome_cohort, part='unfiltered')
+    mt = get_mt_data(dataset=args.exome_cohort, part='raw')
 
     # keep bi-allelic variants
     mt = (mt
@@ -143,9 +143,12 @@ def main(args):
           )
 
     # read intervals for filtering variants (used mainly for exomes)
-    def _get_interval_table(interval: str) -> Union[None, hl.Table]:
+    def _get_interval_table(interval: Optional[str]) -> Optional[hl.Table]:
+        """Return a capture interval HailTable, or None if no interval name is given."""
+        if interval is None:
+            return None
         return get_capture_interval_ht(name=interval,
-                                       reference=args.default_reference) if interval is not None else interval
+                                       reference=args.default_reference)
 
     ht = compute_mean_coverage(mt=mt,
                                normalization_contig=args.normalization_contig,

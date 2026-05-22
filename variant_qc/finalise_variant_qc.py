@@ -54,12 +54,9 @@ RF_PROBABILITY_SNV_CUTOFF = 0.2  # TODO: this cutoff could be lower for SNVs (0.
 RF_PROBABILITY_INDEL_CUTOFF = 0.2
 
 
-def main(args):
-    # Start Hail
-    hl.init(default_reference=args.default_ref_genome)
-
-    # Import adj genotype MT and remove
-    mt = hl.read_matrix_table(get_qc_mt_path(dataset=args.exome_cohort,
+def load_filtered_mt(exome_cohort: str) -> hl.MatrixTable:
+    """Read adj-genotype MT, keep samples passing QC, and drop all annotations."""
+    mt = hl.read_matrix_table(get_qc_mt_path(dataset=exome_cohort,
                                              part='sample_qc_adj_genotypes',
                                              split=True))
 
@@ -70,6 +67,11 @@ def main(args):
           .select_rows()
           )
 
+    return mt
+
+
+def annotate_variant_info(mt: hl.MatrixTable) -> hl.Table:
+    """Annotate rows with variant info fields and return the rows as a HailTable."""
     # import variant info fields (vcf info)
     variant_info_ht = (get_vep_annotation_ht()
                        .drop('vep')
@@ -85,6 +87,11 @@ def main(args):
           .rows()
           )
 
+    return ht
+
+
+def apply_hard_filters(ht: hl.Table) -> hl.Table:
+    """Annotate table with hard-filter flags (fail_inbreeding_coeff, AC0)."""
     # 1. Apply variant hard filters
     # hard filter expression
     variant_hard_filter_expr = {'fail_inbreeding_coeff': ht.inbreeding_coeff < INBREEDING_COEFFICIENT_CUTOFF,
@@ -94,11 +101,21 @@ def main(args):
           .annotate(**variant_hard_filter_expr)
           )
 
+    return ht
+
+
+def apply_vqsr_filter(ht: hl.Table) -> hl.Table:
+    """Annotate table with VQSR filter flag (fail_vqsr)."""
     # 2. Apply VQSR filter
     ht = (ht
           .annotate(fail_vqsr=hl.len(ht.vqsr_filter) != 0)
           )
 
+    return ht
+
+
+def apply_rf_filter(ht: hl.Table) -> hl.Table:
+    """Import RF result table, join to ht, and annotate with fail_rf flag."""
     # 3. Apply RF filter
 
     # import/parse rf final HT
@@ -123,6 +140,11 @@ def main(args):
                     )
           )
 
+    return ht
+
+
+def apply_coverage_and_interval_filters(ht: hl.Table) -> hl.Table:
+    """Annotate table with gnomAD genome coverage and capture-interval membership flags."""
     # 5. Apply coverage/capture interval filters
 
     ## gnomad genome coverage
@@ -147,6 +169,14 @@ def main(args):
           .annotate(is_defined_capture_intervals=hl.is_defined(ht_defined_intervals[ht.key]))
           )
 
+    return ht
+
+
+def summarise_and_checkpoint(ht: hl.Table,
+                             exome_cohort: str,
+                             overwrite: bool,
+                             write_to_file: bool) -> hl.Table:
+    """Apply final pass/fail annotation, aggregate filter summary, checkpoint, and optionally export."""
     # 6. Summary final variant QC
 
     # final variant qc filter joint expression
@@ -180,21 +210,45 @@ def main(args):
     ht = ht.annotate_globals(summary_filter=ht.aggregate(summary_filter_expr, _localize=False))
 
     # write HT variant QC final table
-    output_path = get_variant_qc_ht_path(dataset=args.exome_cohort,
+    output_path = get_variant_qc_ht_path(dataset=exome_cohort,
                                          part='final_qc')
     ht = ht.checkpoint(
         output_path,
-        overwrite=args.overwrite
+        overwrite=overwrite
     )
 
     # print filter summary
     logger.info(f'Variant QC filter summary: {ht.summary_filter.collect()}')
 
     # export HT to file
-    if args.write_to_file:
+    if write_to_file:
         ht.export(
             f'{output_path}.tsv.bgz'
         )
+
+    return ht
+
+
+def main(args):
+    # Start Hail
+    hl.init(default_reference=args.default_ref_genome)
+
+    mt = load_filtered_mt(exome_cohort=args.exome_cohort)
+
+    ht = annotate_variant_info(mt=mt)
+
+    ht = apply_hard_filters(ht=ht)
+
+    ht = apply_vqsr_filter(ht=ht)
+
+    ht = apply_rf_filter(ht=ht)
+
+    ht = apply_coverage_and_interval_filters(ht=ht)
+
+    summarise_and_checkpoint(ht=ht,
+                             exome_cohort=args.exome_cohort,
+                             overwrite=args.overwrite,
+                             write_to_file=args.write_to_file)
 
     # Stop Hail
     hl.stop()

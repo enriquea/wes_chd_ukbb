@@ -1,11 +1,7 @@
-import argparse
-import hail as hl
-import os
-
 """
 Given a Hail MatrixTable, compute variant QC metrics.
-Export result as separated HailTables. Optionally, export results as 
-GBZ-compresed TSV files.
+Export result as separated HailTables. Optionally, export results as
+BGZ-compressed TSV files.
 
 Usage example:
 
@@ -16,8 +12,13 @@ nohup python variant_qc.py \
              > nohup.log 2>&1 &
 """
 
+import argparse
+import hail as hl
+import os
 
-def main(args):
+
+def main(args) -> None:
+    """Compute variant QC metrics from a MatrixTable and write results to a HailTable."""
     # Start Hail
     hl.init(default_reference=args.default_ref_genome)
 

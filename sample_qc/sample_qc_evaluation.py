@@ -297,13 +297,13 @@ def compute_stratified_metrics_filter(ht: hl.Table, qc_metrics: List[str], strat
     return ht.annotate(pop_platform_filters=pop_platform_filters)
 
 
-def main(args):
-
+def main(args: argparse.Namespace) -> None:
+    """Run stratified sample QC evaluation and write results to disk."""
     # Start Hail
     hl.init(default_reference=args.default_ref_genome)
 
     # Import unfiltered split MT
-    mt = get_mt_data(dataset=args.exome_cohort, part='unfiltered')
+    mt = get_mt_data(dataset=args.exome_cohort, part='raw')
 
     # Compute stratified sample_qc (biallelic and multi-allelic sites)
     sample_qc_ht = compute_sample_qc(mt)
