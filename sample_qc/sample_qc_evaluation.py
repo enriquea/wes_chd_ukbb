@@ -303,7 +303,7 @@ def main(args: argparse.Namespace) -> None:
     hl.init(default_reference=args.default_ref_genome)
 
     # Import unfiltered split MT
-    mt = get_mt_data(dataset=args.exome_cohort, part='unfiltered')
+    mt = get_mt_data(dataset=args.exome_cohort, part='raw')
 
     # Compute stratified sample_qc (biallelic and multi-allelic sites)
     sample_qc_ht = compute_sample_qc(mt)

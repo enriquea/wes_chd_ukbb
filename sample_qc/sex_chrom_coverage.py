@@ -135,7 +135,7 @@ def main(args) -> None:
     logger.info("Importing data...")
 
     # import unfiltered MT
-    mt = get_mt_data(dataset=args.exome_cohort, part='unfiltered')
+    mt = get_mt_data(dataset=args.exome_cohort, part='raw')
 
     # keep bi-allelic variants
     mt = (mt
